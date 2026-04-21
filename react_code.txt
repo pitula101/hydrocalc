@@ -1,0 +1,1582 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
+import { getFirestore, doc, onSnapshot, setDoc } from 'firebase/firestore';
+
+// --- Konfiguracja Firebase ---
+const firebaseConfig = JSON.parse(__firebase_config);
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+// --- Konfiguracja Gemini API ---
+const apiKey = "";
+
+const OpenChannelFlow = () => {
+  // --- ZARZĄDZANIE ZAKŁADKAMI ---
+  const [activeTab, setActiveTab] = useState('section'); // 'section' | 'profile' | 'matrix'
+
+  // ==========================================
+  // STAN: ZAKŁADKA 1 (PRZEKRÓJ)
+  // ==========================================
+  const getParamsFromUrl = () => {
+    if (typeof window === 'undefined') return null;
+    const searchParams = new URLSearchParams(window.location.search);
+    if (!searchParams.has('Q')) return null;
+
+    return {
+        params: {
+            b: parseFloat(searchParams.get('b')) || 1.0,
+            m: parseFloat(searchParams.get('m')) || 1.5,
+            h_total: parseFloat(searchParams.get('h_total')) || 1.5,
+            n: parseFloat(searchParams.get('n')) || 0.03,
+            slope: parseFloat(searchParams.get('slope')) || 0.05,
+            Q: parseFloat(searchParams.get('Q')) || 10.0,
+        }
+    };
+  };
+
+  const urlParams = getParamsFromUrl();
+  const hasUrlParams = useRef(!!urlParams);
+
+  const [params, setParams] = useState(urlParams?.params || {
+    b: 1.0, m: 1.5, h_total: 1.5, n: 0.03, slope: 0.05, Q: 10.0,
+  });
+
+  const [results, setResults] = useState({
+    yn: 0, yc: 0, vn: 0, vc: 0, Fr: 0, flowType: '', 
+    En: 0, Emin: 0, isOverflow: false, freeboard: 0, An: 0, Pn: 0, Rh: 0,
+    I_min: 0, v_Imin: 0, Q_Imin: 0, Fr_Imin: 0, Q_hmax: 0, v_hmax: 0, Fr_hmax: 0,
+    widthAnalysisData: [], widthAnalysisExtra: [], Ic: 0,
+    reinforcement: { type: '', desc: '', color: '' }, error: null
+  });
+
+  // ==========================================
+  // STAN: ZAKŁADKA 2 (PROFIL)
+  // ==========================================
+  const [profileGlobal, setProfileGlobal] = useState({
+      Q: 10.0,
+      globalN: '' 
+  });
+
+  const [profileSections, setProfileSections] = useState([
+      { id: 1, chainage: 100, slope: 0.01, b: 1.0, m: 1.5, h_min: 2.0, n: 0.03 },
+      { id: 2, chainage: 150, slope: 0.005, b: 1.5, m: 1.5, h_min: 2.0, n: 0.03 },
+      { id: 3, chainage: 230, slope: 0.02, b: 1.0, m: 2.0, h_min: 1.5, n: 0.035 }
+  ]);
+
+  const [profileResults, setProfileResults] = useState({
+      sections: [], points: [], hasErrors: false
+  });
+
+  // ==========================================
+  // STAN: ZAKŁADKA 3 (ZESTAWIENIA KOMBINACJI)
+  // ==========================================
+  const [matrixParams, setMatrixParams] = useState({
+      Q: "10, 15",
+      b: "1.0",
+      m: "1.5, 2.0",
+      h_total: "1.5",
+      n: "0.03",
+      slope: "0.01, 0.05"
+  });
+  const [matrixResults, setMatrixResults] = useState([]);
+  const [matrixError, setMatrixError] = useState(null);
+  
+  // Stany dla sortowania tabeli matrix
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc', isInput: false });
+
+  // ==========================================
+  // STAN: GLOBALNY
+  // ==========================================
+  const [user, setUser] = useState(null);
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
+  const [saveStatus, setSaveStatus] = useState('saved'); 
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [importCode, setImportCode] = useState("");
+  const [copyFeedback, setCopyFeedback] = useState(""); 
+  const [hoverData, setHoverData] = useState(null);
+  const [hoverWidthData, setHoverWidthData] = useState(null); 
+  const [hoverProfileData, setHoverProfileData] = useState(null); 
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [aiAnalysis, setAiAnalysis] = useState(null);
+  const [isAiLoading, setIsAiLoading] = useState(false);
+
+  const canvasRef = useRef(null);
+  const widthAnalysisCanvasRef = useRef(null); 
+  const profileCanvasRef = useRef(null);
+  const g = 9.81;
+
+  // --- 1. Autentykacja ---
+  useEffect(() => {
+    const initAuth = async () => {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+             await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+             await signInAnonymously(auth);
+        }
+    };
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, (u) => { setUser(u); });
+    return () => unsubscribe();
+  }, []);
+
+  // --- 2. Pobieranie danych ---
+  useEffect(() => {
+    if (!user) return;
+    const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'app_state', 'inputs');
+    const unsubscribe = onSnapshot(docRef, (snap) => {
+        if (snap.exists()) {
+            const data = snap.data();
+            if (hasUrlParams.current) {
+                hasUrlParams.current = false; 
+            } else {
+                if (data.params) setParams(data.params);
+                if (data.profileGlobal) setProfileGlobal(data.profileGlobal);
+                if (data.profileSections) setProfileSections(data.profileSections);
+                if (data.matrixParams) setMatrixParams(data.matrixParams);
+            }
+        }
+        setIsDataLoaded(true);
+    }, (error) => {
+        console.error("Błąd odczytu danych:", error);
+        setIsDataLoaded(true); 
+    });
+    return () => unsubscribe();
+  }, [user]);
+
+  // --- 3. Automatyczny Zapis ---
+  useEffect(() => {
+    if (!user || !isDataLoaded) return;
+    setSaveStatus('unsaved');
+    const saveData = async () => {
+        setSaveStatus('saving');
+        try {
+            const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'app_state', 'inputs');
+            await setDoc(docRef, { params, profileGlobal, profileSections, matrixParams });
+            setSaveStatus('saved');
+        } catch (e) {
+            console.error("Błąd zapisu:", e);
+            setSaveStatus('error');
+        }
+    };
+    const timeoutId = setTimeout(saveData, 1000);
+    return () => clearTimeout(timeoutId);
+  }, [params, profileGlobal, profileSections, matrixParams, user, isDataLoaded]);
+
+  // --- Funkcje Importu/Eksportu ---
+  const getExportCode = () => {
+      try {
+        return btoa(JSON.stringify({ params, profileGlobal, profileSections, matrixParams }));
+      } catch (e) { return ""; }
+  };
+
+  const handleCopyCode = () => {
+      copyToClipboard(getExportCode(), 'code');
+  };
+
+  const handleCopyLink = () => {
+      const url = new URL(window.location.href);
+      Object.keys(params).forEach(key => url.searchParams.set(key, params[key]));
+      copyToClipboard(url.toString(), 'link');
+  };
+
+  const copyToClipboard = (text, type) => {
+      const textArea = document.createElement("textarea");
+      textArea.value = text;
+      textArea.style.position = "fixed";
+      textArea.style.left = "-9999px";
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      try {
+          document.execCommand('copy');
+          setCopyFeedback(type);
+          setTimeout(() => setCopyFeedback(""), 2000);
+      } catch (err) {
+          alert("Nie udało się skopiować automatycznie.");
+      }
+      document.body.removeChild(textArea);
+  };
+
+  const handleImport = () => {
+      try {
+          if(!importCode) return;
+          const decoded = atob(importCode.trim());
+          const newParams = JSON.parse(decoded);
+          
+          if(newParams.params) setParams(newParams.params);
+          if(newParams.profileGlobal) setProfileGlobal(newParams.profileGlobal);
+          if(newParams.profileSections) setProfileSections(newParams.profileSections);
+          if(newParams.matrixParams) setMatrixParams(newParams.matrixParams);
+          
+          setImportCode("");
+          alert("Konfiguracja wczytana pomyślnie!");
+          setShowExportModal(false);
+      } catch (e) {
+          alert("Błąd dekodowania. Sprawdź czy kod jest poprawny.");
+      }
+  };
+
+  // --- Gemini AI ---
+  const analyzeWithGemini = async () => {
+      setIsAiLoading(true);
+      setAiAnalysis(null);
+      
+      const prompt = `
+        Jesteś ekspertem inżynierii wodnej i hydrotechniki.
+        Przeanalizuj krótko poniższe parametry hydrauliczne koryta otwartego i oceń warunki przepływu oraz dobór umocnienia.
+        
+        Dane:
+        - Przepływ Q: ${params.Q} m3/s
+        - Geometria: dno b=${params.b}m, skarpy 1:${params.m}, spadek dna ${(params.slope * 100).toFixed(2)}%
+        - Wyniki:
+          - Głębokość normalna hn: ${results.yn.toFixed(2)} m
+          - Prędkość vn: ${results.vn.toFixed(2)} m/s
+          - Liczba Froude'a: ${results.Fr.toFixed(2)} (${results.flowType})
+          - Sugerowane umocnienie (algorytm): ${results.reinforcement.type}
+        
+        Napisz zwięzłą opinię (max 3-4 zdania) czy prędkość jest bezpieczna, czy istnieje ryzyko erozji lub zamulania, oraz czy zaproponowane umocnienie jest adekwatne. 
+        WAŻNE: Nie używaj formatowania LaTeX (np. $...$), stosuj zwykły tekst dla jednostek i wartości.
+        Odpisz w tonie profesjonalnym, inżynierskim.
+      `;
+
+      try {
+        const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+            }
+        );
+        const data = await response.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        setAiAnalysis(text || "Nie udało się uzyskać odpowiedzi od AI.");
+      } catch (error) {
+          setAiAnalysis("Wystąpił błąd podczas komunikacji z AI.");
+      } finally {
+          setIsAiLoading(false);
+      }
+  };
+
+  // --- Funkcje Hydrauliczne BAZOWE ---
+  const getArea = (y, b, m) => (b + m * y) * y;
+  const getPerimeter = (y, b, m) => b + 2 * y * Math.sqrt(1 + m * m);
+  const getTopWidth = (y, b, m) => b + 2 * m * y;
+  const getSpecificEnergy = (y, b, m, Q) => {
+    if (y <= 0) return Infinity;
+    const A = getArea(y, b, m);
+    if (A <= 0) return Infinity;
+    const v = Q / A;
+    return y + (v * v) / (2 * g);
+  };
+  const solveBisection = (func, min, max, tolerance = 1e-6, maxIter = 100) => {
+    let lower = min, upper = max, iter = 0;
+    if (func(lower) * func(upper) > 0) return null;
+    while (iter < maxIter) {
+      const mid = (lower + upper) / 2;
+      const val = func(mid);
+      if (Math.abs(val) < tolerance) return mid;
+      if (func(lower) * val < 0) upper = mid;
+      else lower = mid;
+      iter++;
+    }
+    return (lower + upper) / 2;
+  };
+
+  // ==========================================================
+  // OBLICZENIA ZAKŁADKI 1: PRZEKRÓJ
+  // ==========================================================
+  const getReinforcementSuggestion = (v) => {
+    if (v < 0.3) return { type: 'Brak (Ryzyko zamulania)', desc: 'Prędkość poniżej minimum samooczyszczania. Wymagane regularne odmulanie.', color: isDarkMode ? 'text-yellow-400 bg-yellow-900/30' : 'text-yellow-600 bg-yellow-50' };
+    if (v <= 0.6) return { type: 'Grunt rodzimy (Naturalne)', desc: 'Dla gruntów spoistych umocnienie nie jest wymagane.', color: isDarkMode ? 'text-green-400 bg-green-900/30' : 'text-green-700 bg-green-50' };
+    if (v <= 0.9) return { type: 'Darniowanie / Obsiew', desc: 'Umocnienie biologiczne (trawa dobrze ukorzeniona).', color: isDarkMode ? 'text-green-300 bg-green-900/30' : 'text-green-600 bg-green-50' };
+    if (v <= 1.5) return { type: 'Narzut kamienny / Faszyna', desc: 'Wymagane zabezpieczenie dna i stopy skarp (np. kiszka faszynowa, narzut).', color: isDarkMode ? 'text-blue-300 bg-blue-900/30' : 'text-blue-700 bg-blue-50' };
+    if (v <= 3.0) return { type: 'Materace Gabionowe / Bruk', desc: 'Umocnienie ciężkie: Kosze gabionowe, bruk kamienny na zaprawie lub siatce.', color: isDarkMode ? 'text-orange-300 bg-orange-900/30' : 'text-orange-700 bg-orange-50' };
+    if (v <= 5.0) return { type: 'Beton / Żelbet', desc: 'Płyty betonowe, kanały żelbetowe prefabrykowane.', color: isDarkMode ? 'text-red-300 bg-red-900/30' : 'text-red-700 bg-red-50' };
+    return { type: 'Konstrukcja Specjalna', desc: 'Prędkość ekstremalna. Wymagane indywidualne projektowanie.', color: isDarkMode ? 'text-purple-300 bg-purple-900/30' : 'text-purple-700 bg-purple-50' };
+  };
+
+  const calculateSection = () => {
+    const { b, m, n, slope, Q, h_total } = params;
+    if (slope <= 0 || Q <= 0 || b <= 0 || n <= 0) {
+      setResults(prev => ({ ...prev, error: "Parametry muszą być dodatnie (Q, b, n, i > 0)" }));
+      return;
+    }
+
+    let yc = solveBisection((y) => {
+        const A = getArea(y, b, m);
+        const T = getTopWidth(y, b, m);
+        return g * Math.pow(A, 3) - Math.pow(Q, 2) * T;
+    }, 0.01, 20);
+
+    let yn = solveBisection((y) => {
+        const A = getArea(y, b, m);
+        const P = getPerimeter(y, b, m);
+        return Math.pow(A, 5/3) / Math.pow(P, 2/3) - (n * Q) / Math.sqrt(slope);
+    }, 0.01, 50);
+
+    if (yn === null || yc === null) {
+        setResults(prev => ({ ...prev, error: "Brak rozwiązania dla zadanych danych." }));
+        return;
+    }
+
+    const Ac = getArea(yc, b, m); const Pc = getPerimeter(yc, b, m); const Rc = Ac / Pc; const vc = Q / Ac; 
+    const termIc = (n * Q) / (Ac * Math.pow(Rc, 2/3)); const Ic = Math.pow(termIc, 2);
+    
+    const An = getArea(yn, b, m); const Pn = getPerimeter(yn, b, m); const Rh = An / Pn; const vn = Q / An; 
+    const Tn = getTopWidth(yn, b, m); const hydDepthN = An / Tn; 
+    
+    const Fr = vn / Math.sqrt(g * hydDepthN);
+    const flowType = Fr < 1 ? "Spokojny" : (Fr > 1 ? "Rwący" : "Krytyczny");
+
+    const En = getSpecificEnergy(yn, b, m, Q); const Emin = getSpecificEnergy(yc, b, m, Q);
+    const isOverflow = yn > h_total; const freeboard = h_total - yn;
+
+    const A_full = getArea(h_total, b, m); const P_full = getPerimeter(h_total, b, m); const R_full = A_full / P_full;
+    const T_full = getTopWidth(h_total, b, m); const hydDepthFull = A_full / T_full;
+
+    const termImin = (n * Q) / (A_full * Math.pow(R_full, 2/3));
+    const I_min = Math.pow(termImin, 2); const v_Imin = Q / A_full;
+    const Q_Imin = (1/n) * A_full * Math.pow(R_full, 2/3) * Math.sqrt(I_min);
+    const Fr_Imin = v_Imin / Math.sqrt(g * hydDepthFull);
+
+    const Q_hmax = (1/n) * A_full * Math.pow(R_full, 2/3) * Math.sqrt(slope);
+    const v_hmax = Q_hmax / A_full; const Fr_hmax = v_hmax / Math.sqrt(g * hydDepthFull);
+
+    const widthAnalysisPoints = [];
+    const popularSlopes = [1.5, 2.0, 2.5, 3.0];
+    const extraSlopes = popularSlopes.filter(val => Math.abs(val - m) > 0.01);
+    const widthAnalysisExtra = extraSlopes.map(s => ({ m: s, points: [] }));
+
+    const b_start = 0.2; const b_end = Math.max(b * 2.5, 5.0); const steps = 60; const step_val = (b_end - b_start) / steps;
+
+    for(let i=0; i<=steps; i++) {
+        const b_iter = b_start + i * step_val;
+        const yn_main = solveBisection((y) => {
+            const A = (b_iter + m * y) * y; const P = b_iter + 2 * y * Math.sqrt(1 + m * m);
+            return Math.pow(A, 5/3) / Math.pow(P, 2/3) - (n * Q) / Math.sqrt(slope);
+        }, 0.01, 50);
+        if(yn_main !== null) widthAnalysisPoints.push({ b: b_iter, h: yn_main });
+
+        widthAnalysisExtra.forEach(dataset => {
+            const m_ex = dataset.m;
+            const yn_ex = solveBisection((y) => {
+                const A = (b_iter + m_ex * y) * y; const P = b_iter + 2 * y * Math.sqrt(1 + m_ex * m_ex);
+                return Math.pow(A, 5/3) / Math.pow(P, 2/3) - (n * Q) / Math.sqrt(slope);
+            }, 0.01, 50);
+            if(yn_ex !== null) dataset.points.push({ b: b_iter, h: yn_ex });
+        });
+    }
+
+    const reinforcement = getReinforcementSuggestion(vn);
+
+    setResults({
+      yn, yc, vn, vc, Fr, flowType, En, Emin, An, Pn, Rh, isOverflow, freeboard,
+      I_min, v_Imin, Q_Imin, Fr_Imin, Q_hmax, v_hmax, Fr_hmax, Ic,
+      widthAnalysisData: widthAnalysisPoints, widthAnalysisExtra, reinforcement, error: null
+    });
+  };
+
+  useEffect(() => { if(activeTab === 'section') calculateSection(); }, [params, isDarkMode, activeTab]);
+
+  // ==========================================================
+  // OBLICZENIA ZAKŁADKI 2: PROFIL
+  // ==========================================================
+  const calculateProfile = () => {
+      let currentX = 0;
+      let currentZ = 100; // Arbitralna rzędna początkowa
+      let newPts = [];
+      let hasErrors = false;
+
+      const Q = parseFloat(profileGlobal.Q);
+      if (isNaN(Q) || Q <= 0) hasErrors = true;
+
+      const calculatedSections = profileSections.map((sec) => {
+          const effN = profileGlobal.globalN !== '' ? parseFloat(profileGlobal.globalN) : parseFloat(sec.n);
+          const slope = parseFloat(sec.slope);
+          const b = parseFloat(sec.b);
+          const m = parseFloat(sec.m);
+          const chainage = sec.chainage !== undefined ? parseFloat(sec.chainage) : currentX + parseFloat(sec.length || 0);
+          const L = chainage - currentX;
+          const hmin = parseFloat(sec.h_min);
+
+          if(slope <= 0 || b <= 0 || effN <= 0 || L <= 0 || isNaN(chainage) || hasErrors) {
+              hasErrors = true;
+              return { ...sec, hn: null, error: true };
+          }
+
+          let yc = solveBisection((y) => {
+                const A = getArea(y, b, m);
+                const T = getTopWidth(y, b, m);
+                return g * Math.pow(A, 3) - Math.pow(Q, 2) * T;
+          }, 0.01, 20);
+
+          let yn = solveBisection((y) => {
+                const A = (b + m * y) * y;
+                const P = b + 2 * y * Math.sqrt(1 + m * m);
+                return Math.pow(A, 5/3) / Math.pow(P, 2/3) - (effN * Q) / Math.sqrt(slope);
+          }, 0.01, 50);
+
+          if (yn === null || yc === null) {
+              hasErrors = true;
+              return { ...sec, hn: null, error: true };
+          }
+
+          const An = getArea(yn, b, m);
+          const Tn = getTopWidth(yn, b, m);
+          const vn = Q / An;
+          const En = yn + (vn * vn) / (2 * g); 
+          
+          const Fr = vn / Math.sqrt(g * (An / Tn));
+          const flowType = Fr < 1 ? "Spokojny" : (Fr > 1 ? "Rwący" : "Krytyczny");
+
+          const startX = currentX;
+          const startZ = currentZ;
+          const endX = chainage;
+          const endZ = currentZ - L * slope;
+
+          newPts.push({ x: startX, zb: startZ, zw: startZ + yn, zc: startZ + yc, ze: startZ + En, ztop: startZ + hmin });
+          newPts.push({ x: endX, zb: endZ, zw: endZ + yn, zc: endZ + yc, ze: endZ + En, ztop: endZ + hmin });
+
+          currentX = endX;
+          currentZ = endZ;
+
+          return { ...sec, chainage, L, hn: yn, hc: yc, vn, En, Fr, flowType, startX, endX, startZ, endZ, error: false };
+      });
+
+      setProfileResults({ sections: calculatedSections, points: newPts, hasErrors });
+  };
+
+  useEffect(() => { if(activeTab === 'profile') calculateProfile(); }, [profileGlobal, profileSections, activeTab]);
+
+  const updateProfileSection = (id, field, value) => {
+      setProfileSections(prev => prev.map(s => s.id === id ? { ...s, [field]: value } : s));
+  };
+
+  const addProfileSection = () => {
+      const lastSec = profileSections[profileSections.length - 1];
+      const newId = Date.now();
+      if(lastSec) {
+          const newChainage = (parseFloat(lastSec.chainage) || 0) + 100;
+          setProfileSections(prev => [...prev, { ...lastSec, id: newId, chainage: newChainage }]);
+      } else {
+          setProfileSections([{ id: newId, chainage: 100, slope: 0.01, b: 1, m: 1.5, h_min: 1.5, n: 0.03 }]);
+      }
+  };
+
+  const removeProfileSection = (id) => {
+      if(profileSections.length > 1) {
+          setProfileSections(prev => prev.filter(s => s.id !== id));
+      }
+  };
+
+  // ==========================================================
+  // OBLICZENIA ZAKŁADKI 3: ZESTAWIENIA KOMBINACJI
+  // ==========================================================
+  const handleMatrixInputChange = (e) => {
+      const { name, value } = e.target;
+      setMatrixParams({ ...matrixParams, [name]: value });
+  };
+
+  const parseMatrixInput = (str, allowZero = false) => {
+      return str.split(',')
+          .map(s => parseFloat(s.trim()))
+          .filter(v => !isNaN(v) && (allowZero ? v >= 0 : v > 0));
+  };
+
+  const calculateMatrix = () => {
+      const Qs = parseMatrixInput(matrixParams.Q);
+      const bs = parseMatrixInput(matrixParams.b);
+      const ms = parseMatrixInput(matrixParams.m, true); // m może być 0
+      const hs = parseMatrixInput(matrixParams.h_total);
+      const ns = parseMatrixInput(matrixParams.n);
+      const slopes = parseMatrixInput(matrixParams.slope);
+
+      if (!Qs.length || !bs.length || !ms.length || !hs.length || !ns.length || !slopes.length) {
+          setMatrixError("Upewnij się, że wpisano przynajmniej jedną poprawną wartość dla każdego parametru (oddzielone przecinkami).");
+          setMatrixResults([]);
+          return;
+      }
+
+      const totalCombos = Qs.length * bs.length * ms.length * hs.length * ns.length * slopes.length;
+      if (totalCombos > 1000) {
+          setMatrixError(`Zbyt wiele kombinacji (${totalCombos}). Limit wynosi 1000, aby zapobiec zawieszeniu przeglądarki.`);
+          setMatrixResults([]);
+          return;
+      }
+
+      setMatrixError(null);
+      const newResults = [];
+
+      Qs.forEach(Q => {
+          bs.forEach(b => {
+              ms.forEach(m => {
+                  hs.forEach(h_total => {
+                      ns.forEach(n => {
+                          slopes.forEach(slope => {
+                              
+                              let yc = solveBisection((y) => {
+                                  const A = getArea(y, b, m);
+                                  const T = getTopWidth(y, b, m);
+                                  return g * Math.pow(A, 3) - Math.pow(Q, 2) * T;
+                              }, 0.01, 20);
+
+                              let yn = solveBisection((y) => {
+                                  const A = getArea(y, b, m);
+                                  const P = getPerimeter(y, b, m);
+                                  return Math.pow(A, 5/3) / Math.pow(P, 2/3) - (n * Q) / Math.sqrt(slope);
+                              }, 0.01, 50);
+
+                              if (yn !== null && yc !== null) {
+                                  const An = getArea(yn, b, m);
+                                  const Tn = getTopWidth(yn, b, m);
+                                  const vn = Q / An;
+                                  const Fr = vn / Math.sqrt(g * (An / Tn));
+                                  const flowType = Fr < 1 ? "Spokojny" : (Fr > 1 ? "Rwący" : "Krytyczny");
+                                  const En = yn + (vn * vn) / (2 * g);
+                                  const isOverflow = yn > h_total;
+
+                                  newResults.push({
+                                      inputs: { Q, b, m, h_total, n, slope },
+                                      outputs: { yn, yc, vn, Fr, flowType, En, isOverflow }
+                                  });
+                              } else {
+                                  newResults.push({
+                                      inputs: { Q, b, m, h_total, n, slope },
+                                      outputs: null
+                                  });
+                              }
+
+                          });
+                      });
+                  });
+              });
+          });
+      });
+
+      setMatrixResults(newResults);
+  };
+
+  useEffect(() => {
+      if (activeTab === 'matrix') {
+          // Debounce kalkulacji macierzy
+          const timeoutId = setTimeout(calculateMatrix, 500);
+          return () => clearTimeout(timeoutId);
+      }
+  }, [matrixParams, activeTab]);
+
+  // ==========================================================
+  // FUNKCJE ZAKŁADKI 3: SORTOWANIE, KOLORY, EKSPORT
+  // ==========================================================
+  
+  const handleSort = (key, isInput = false) => {
+      let direction = 'asc';
+      if (sortConfig.key === key && sortConfig.direction === 'asc') {
+          direction = 'desc';
+      }
+      setSortConfig({ key, direction, isInput });
+  };
+
+  const getSortIcon = (key) => {
+      if (sortConfig.key !== key) return <span className="opacity-30 ml-1">↕</span>;
+      return sortConfig.direction === 'asc' ? <span className="text-blue-500 ml-1">↑</span> : <span className="text-blue-500 ml-1">↓</span>;
+  };
+
+  const sortedMatrixResults = React.useMemo(() => {
+      let sortableItems = [...matrixResults];
+      if (sortConfig.key !== null) {
+          sortableItems.sort((a, b) => {
+              if (!a.outputs || !b.outputs) return 0;
+              const aValue = sortConfig.isInput ? a.inputs[sortConfig.key] : a.outputs[sortConfig.key];
+              const bValue = sortConfig.isInput ? b.inputs[sortConfig.key] : b.outputs[sortConfig.key];
+
+              if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
+              if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
+              return 0;
+          });
+      }
+      return sortableItems;
+  }, [matrixResults, sortConfig]);
+
+  const exportToCSV = () => {
+      if (sortedMatrixResults.length === 0) return;
+      
+      const formatNumber = (num, dec) => num.toFixed(dec).replace('.', ',');
+      
+      const headers = ['Q [m3/s]', 'b [m]', '1:m', 'n', 'i [-]', 'h_max [m]', 'h_n [m]', 'v_n [m/s]', 'Fr [-]', 'Rezim', 'h_c [m]', 'E [m]', 'Status'];
+      const rows = sortedMatrixResults.map(res => {
+          if (!res.outputs) return `${formatNumber(res.inputs.Q, 2)};${formatNumber(res.inputs.b, 2)};${formatNumber(res.inputs.m, 2)};${formatNumber(res.inputs.n, 3)};${formatNumber(res.inputs.slope, 4)};${formatNumber(res.inputs.h_total, 2)};Błąd;;;;;;`;
+          
+          return `${formatNumber(res.inputs.Q, 2)};${formatNumber(res.inputs.b, 2)};${formatNumber(res.inputs.m, 2)};${formatNumber(res.inputs.n, 3)};${formatNumber(res.inputs.slope, 4)};${formatNumber(res.inputs.h_total, 2)};${formatNumber(res.outputs.yn, 2)};${formatNumber(res.outputs.vn, 2)};${formatNumber(res.outputs.Fr, 2)};${res.outputs.flowType};${formatNumber(res.outputs.yc, 2)};${formatNumber(res.outputs.En, 2)};${res.outputs.isOverflow ? 'PRZELEWA' : 'OK'}`;
+      });
+      
+      const csvContent = "\uFEFF" + headers.join(';') + '\n' + rows.join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'Kombinacje_Koryta.csv');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+  };
+
+  const colorPalette = [
+      'text-blue-600 dark:text-blue-400 font-black',
+      'text-emerald-600 dark:text-emerald-400 font-black',
+      'text-purple-600 dark:text-purple-400 font-black',
+      'text-amber-600 dark:text-amber-400 font-black',
+      'text-pink-600 dark:text-pink-400 font-black',
+      'text-cyan-600 dark:text-cyan-400 font-black',
+  ];
+
+  const uniqueValues = React.useMemo(() => {
+      const uniques = { Q: [], b: [], m: [], n: [], slope: [], h_total: [] };
+      matrixResults.forEach(res => {
+          Object.keys(uniques).forEach(key => {
+              if (!uniques[key].includes(res.inputs[key])) {
+                  uniques[key].push(res.inputs[key]);
+              }
+          });
+      });
+      Object.keys(uniques).forEach(key => uniques[key].sort((a,b)=>a-b));
+      return uniques;
+  }, [matrixResults]);
+
+  const getColorClass = (key, value, defaultClass) => {
+      const index = uniqueValues[key]?.indexOf(value);
+      if (index === -1 || uniqueValues[key]?.length <= 1) return defaultClass;
+      return colorPalette[index % colorPalette.length];
+  };
+
+  // ==========================================================
+  // RYSOWANIE: PROFIL PODŁUŻNY (HOVER I CANVAS)
+  // ==========================================================
+  const handleMouseMoveProfile = (e) => {
+      if (activeTab !== 'profile' || !profileCanvasRef.current || profileResults.hasErrors) return;
+      const canvas = profileCanvasRef.current;
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const x = (e.clientX - rect.left) * scaleX;
+      
+      const W = canvas.width;
+      const MARGIN_X = 50;
+
+      if (x < MARGIN_X || x > W - 10) {
+          setHoverProfileData(null);
+          return;
+      }
+
+      const pts = profileResults.points;
+      if (!pts || pts.length === 0) return;
+
+      const minX = 0;
+      const maxX = pts[pts.length - 1].x;
+      const drawW = W - 2 * MARGIN_X;
+      const scaleXCoord = drawW / (maxX - minX);
+      const xMetric = (x - MARGIN_X) / scaleXCoord + minX;
+
+      const section = profileResults.sections.find(s => xMetric >= s.startX && xMetric <= s.endX);
+      if (section && !section.error) {
+          setHoverProfileData({ xPx: x, xMetric, section });
+      } else {
+          setHoverProfileData(null);
+      }
+  };
+
+  const handleMouseLeaveProfile = () => { setHoverProfileData(null); };
+
+  useEffect(() => {
+      if (activeTab !== 'profile' || profileResults.hasErrors || profileResults.points.length === 0) return;
+      const canvas = profileCanvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const W = canvas.width;
+      const H = canvas.height;
+
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, W, H);
+
+      const MARGIN_X = 50; const MARGIN_Y = 40;
+      const pts = profileResults.points;
+      const minX = 0; const maxX = pts[pts.length - 1].x;
+      
+      const minZ = Math.min(...pts.map(p => p.zb));
+      const maxZ = Math.max(...pts.map(p => Math.max(p.ztop, p.zw, p.ze)));
+      const rangeZ = maxZ - minZ; const padZ = rangeZ * 0.2;
+      const drawMinZ = minZ - padZ; const drawMaxZ = maxZ + padZ;
+
+      const scaleX = (W - 2 * MARGIN_X) / (maxX - minX);
+      const scaleY = (H - 2 * MARGIN_Y) / (drawMaxZ - drawMinZ);
+
+      const toX = (x) => MARGIN_X + (x - minX) * scaleX;
+      const toY = (z) => H - MARGIN_Y - (z - drawMinZ) * scaleY;
+
+      drawArrowAxis(ctx, MARGIN_X, H - MARGIN_Y + 20, W - 10, H - MARGIN_Y + 20, 'L [m]');
+      drawArrowAxis(ctx, MARGIN_X - 20, H - MARGIN_Y, MARGIN_X - 20, 10, 'Z [m]');
+
+      profileResults.sections.forEach(sec => {
+          const xPx = toX(sec.endX);
+          ctx.beginPath(); ctx.strokeStyle = '#f0f0f0'; ctx.moveTo(xPx, MARGIN_Y); ctx.lineTo(xPx, H - MARGIN_Y); ctx.stroke();
+          ctx.fillStyle = '#888'; ctx.textAlign = 'center'; ctx.fillText(`L=${sec.endX.toFixed(0)}`, xPx, H - MARGIN_Y + 15);
+      });
+      ctx.fillText(`L=0`, toX(0), H - MARGIN_Y + 15);
+
+      const stepZ = calculateStep(drawMaxZ - drawMinZ);
+      for(let z = Math.ceil(drawMinZ/stepZ)*stepZ; z <= drawMaxZ; z += stepZ) {
+          const yPx = toY(z);
+          ctx.beginPath(); ctx.strokeStyle = '#f0f0f0'; ctx.moveTo(MARGIN_X, yPx); ctx.lineTo(W - MARGIN_X, yPx); ctx.stroke();
+          ctx.fillStyle = '#666'; ctx.textAlign = 'right'; ctx.fillText(z.toFixed(1), MARGIN_X - 25, yPx + 4);
+      }
+
+      ctx.beginPath(); ctx.strokeStyle = '#EF5350'; ctx.setLineDash([5, 5]); ctx.lineWidth = 1.5;
+      pts.forEach((p, i) => { if(i===0) ctx.moveTo(toX(p.x), toY(p.ztop)); else ctx.lineTo(toX(p.x), toY(p.ztop)); });
+      ctx.stroke(); ctx.setLineDash([]);
+
+      ctx.beginPath(); ctx.strokeStyle = '#9C27B0'; ctx.setLineDash([8, 4]); ctx.lineWidth = 1.5;
+      pts.forEach((p, i) => { if(i===0) ctx.moveTo(toX(p.x), toY(p.ze)); else ctx.lineTo(toX(p.x), toY(p.ze)); });
+      ctx.stroke(); ctx.setLineDash([]);
+
+      ctx.beginPath(); ctx.strokeStyle = '#FF9800'; ctx.setLineDash([3, 3]); ctx.lineWidth = 1.5;
+      pts.forEach((p, i) => { if(i===0) ctx.moveTo(toX(p.x), toY(p.zc)); else ctx.lineTo(toX(p.x), toY(p.zc)); });
+      ctx.stroke(); ctx.setLineDash([]);
+
+      ctx.beginPath(); ctx.moveTo(toX(pts[0].x), toY(pts[0].zb));
+      pts.forEach(p => ctx.lineTo(toX(p.x), toY(p.zw)));
+      for(let i = pts.length - 1; i >= 0; i--) { ctx.lineTo(toX(pts[i].x), toY(pts[i].zb)); }
+      ctx.closePath(); ctx.fillStyle = 'rgba(33, 150, 243, 0.4)'; ctx.fill();
+
+      ctx.beginPath(); ctx.strokeStyle = '#1976D2'; ctx.lineWidth = 2;
+      pts.forEach((p, i) => { if(i===0) ctx.moveTo(toX(p.x), toY(p.zw)); else ctx.lineTo(toX(p.x), toY(p.zw)); });
+      ctx.stroke();
+
+      ctx.beginPath(); ctx.strokeStyle = '#5D4037'; ctx.lineWidth = 3;
+      pts.forEach((p, i) => { if(i===0) ctx.moveTo(toX(p.x), toY(p.zb)); else ctx.lineTo(toX(p.x), toY(p.zb)); });
+      ctx.stroke();
+
+      if (hoverProfileData) {
+          const { xPx, section } = hoverProfileData;
+          ctx.beginPath(); ctx.strokeStyle = '#333'; ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
+          ctx.moveTo(xPx, MARGIN_Y); ctx.lineTo(xPx, H - MARGIN_Y); ctx.stroke(); ctx.setLineDash([]);
+
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'; ctx.strokeStyle = '#ccc'; ctx.lineWidth = 1;
+          const boxW = 160; const boxH = 100;
+          let boxX = xPx + 10; if (boxX + boxW > W) boxX = xPx - boxW - 10;
+          const boxY = MARGIN_Y + 10;
+          
+          ctx.fillRect(boxX, boxY, boxW, boxH); ctx.strokeRect(boxX, boxY, boxW, boxH);
+
+          ctx.fillStyle = '#000'; ctx.textAlign = 'left'; ctx.font = 'bold 12px sans-serif';
+          ctx.fillText(`Odcinek ${section.id}`, boxX + 10, boxY + 18);
+          ctx.font = '11px sans-serif';
+          ctx.fillStyle = '#1976D2'; ctx.fillText(`h_n = ${section.hn.toFixed(2)} m`, boxX + 10, boxY + 36);
+          ctx.fillStyle = '#FF9800'; ctx.fillText(`h_c = ${section.hc.toFixed(2)} m`, boxX + 10, boxY + 50);
+          ctx.fillStyle = '#9C27B0'; ctx.fillText(`E = ${section.En.toFixed(2)} m`, boxX + 10, boxY + 64);
+          ctx.fillStyle = '#333'; ctx.fillText(`v = ${section.vn.toFixed(2)} m/s`, boxX + 10, boxY + 78);
+          ctx.font = 'bold 11px sans-serif'; ctx.fillStyle = section.Fr > 1 ? '#EF5350' : '#4CAF50';
+          ctx.fillText(`Fr = ${section.Fr.toFixed(2)} (${section.flowType})`, boxX + 10, boxY + 92);
+      }
+
+      ctx.textAlign = 'left'; ctx.fillStyle = '#5D4037'; ctx.font = 'bold 11px sans-serif'; ctx.fillText(`━━ Dno koryta`, MARGIN_X + 10, 20);
+      ctx.fillStyle = '#1976D2'; ctx.fillText(`━━ Zwierciadło wody`, MARGIN_X + 10, 35);
+      ctx.fillStyle = '#EF5350'; ctx.fillText(`-- Max. wys. skarp`, MARGIN_X + 130, 20);
+      ctx.fillStyle = '#9C27B0'; ctx.fillText(`-- Linia Energii E`, MARGIN_X + 130, 35);
+      ctx.fillStyle = '#FF9800'; ctx.fillText(`-- Głębokość Krytyczna h_c`, MARGIN_X + 250, 20);
+
+  }, [profileResults, hoverProfileData, activeTab]);
+
+
+  // ==========================================================
+  // RYSOWANIE: ZAKŁADKA 1 (Istniejące Canvasy)
+  // ==========================================================
+  const handleMouseMove = (e) => {
+      if (activeTab !== 'section' || !canvasRef.current || results.error) return;
+      const canvas = canvasRef.current;
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const x = (e.clientX - rect.left) * scaleX;
+      const y = (e.clientY - rect.top) * scaleY;
+      const W = canvas.width;
+      const H = canvas.height;
+      const SPLIT_RATIO = 0.55;
+      const X_SPLIT = W * SPLIT_RATIO;
+      const MARGIN = 40;
+
+      if (x > X_SPLIT && x < W && y > MARGIN && y < H - MARGIN + 20) {
+          const { b, m, Q } = params;
+          const { En, Emin, yc } = results;
+          const eOriginX = X_SPLIT + 40;
+          const eWidth = W - eOriginX - 30;
+          const maxE_Draw = Math.max(En, Emin * 3, 0.5) * 1.5;
+          const scaleX_Energy = eWidth / maxE_Draw;
+          const eMouseMetric = (x - eOriginX) / scaleX_Energy;
+
+          if (eMouseMetric > Emin * 0.99) {
+              const { h1, h2 } = solveDepthsForEnergy(eMouseMetric, b, m, Q, yc);
+              setHoverData({ E: eMouseMetric, h1, h2 });
+          } else { setHoverData(null); }
+      } else { setHoverData(null); }
+  };
+
+  const handleMouseMoveWidth = (e) => {
+      if (activeTab !== 'section' || !widthAnalysisCanvasRef.current || results.error) return;
+      const canvas = widthAnalysisCanvasRef.current;
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const x = (e.clientX - rect.left) * scaleX;
+      
+      const W = canvas.width;
+      const MARGIN = 40;
+      
+      const mainData = results.widthAnalysisData;
+      if(mainData.length === 0) return;
+      
+      const minB = mainData[0].b;
+      const maxB = mainData[mainData.length - 1].b;
+      
+      const drawW = W - 2 * MARGIN;
+      const scaleB = drawW / (maxB - minB);
+      const bMouse = minB + (x - MARGIN) / scaleB;
+      
+      if (bMouse >= minB && bMouse <= maxB) {
+          let closestIndex = 0;
+          let minDiff = Infinity;
+          mainData.forEach((p, i) => {
+              const diff = Math.abs(p.b - bMouse);
+              if(diff < minDiff) { minDiff = diff; closestIndex = i; }
+          });
+
+          const currentPoint = {
+              b: mainData[closestIndex].b,
+              h_main: mainData[closestIndex].h,
+              m_main: params.m,
+              extras: results.widthAnalysisExtra.map(ex => ({
+                  m: ex.m,
+                  h: ex.points[closestIndex]?.h
+              }))
+          };
+          setHoverWidthData(currentPoint);
+      } else {
+          setHoverWidthData(null);
+      }
+  };
+
+  const handleMouseLeave = () => { setHoverData(null); };
+  const handleMouseLeaveWidth = () => { setHoverWidthData(null); };
+
+  useEffect(() => {
+    if (activeTab !== 'section' || results.error) return;
+    const { yn, yc, isOverflow, En, Emin } = results;
+    const { b, m, h_total, Q } = params;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width;
+    const H = canvas.height;
+
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, W, H);
+
+    const SPLIT_RATIO = 0.55;
+    const X_SPLIT = W * SPLIT_RATIO;
+    const MARGIN = 40;
+    const VIEW_H = H - 2 * MARGIN;
+    const BOTTOM_Y = H - MARGIN;
+
+    const yMaxMetric = Math.max(h_total, yn, yc) * 1.3;
+    const topWidthMetric = b + 2 * m * yMaxMetric;
+    const scaleX_Channel = (X_SPLIT - 2 * MARGIN) / topWidthMetric;
+    const scaleY_Potential = VIEW_H / yMaxMetric;
+    const scale = Math.min(scaleX_Channel, scaleY_Potential); 
+    const toY = (yMetric) => BOTTOM_Y - yMetric * scale;
+    
+    // 1. KORYTO
+    const cx = X_SPLIT / 2; 
+    const toX_Channel = (xMetric) => cx + xMetric * scale;
+    const halfB = b / 2;
+    const halfTopPhys = halfB + m * h_total;
+
+    ctx.beginPath(); ctx.moveTo(toX_Channel(-halfTopPhys), toY(h_total)); ctx.lineTo(toX_Channel(-halfB), toY(0));
+    ctx.lineTo(toX_Channel(halfB), toY(0)); ctx.lineTo(toX_Channel(halfTopPhys), toY(h_total));
+    ctx.strokeStyle = '#5D4037'; ctx.lineWidth = 4; ctx.stroke();
+
+    ctx.fillStyle = '#EFEBE9'; ctx.beginPath();
+    ctx.moveTo(toX_Channel(-halfTopPhys), toY(h_total)); ctx.lineTo(toX_Channel(-halfTopPhys - 0.5), toY(h_total)); 
+    ctx.lineTo(toX_Channel(-halfTopPhys - 0.5), toY(h_total) + 20); ctx.lineTo(toX_Channel(halfTopPhys + 0.5), toY(h_total) + 20);
+    ctx.lineTo(toX_Channel(halfTopPhys + 0.5), toY(h_total)); ctx.lineTo(toX_Channel(halfTopPhys), toY(h_total));
+    ctx.lineTo(toX_Channel(halfB), toY(0)); ctx.lineTo(toX_Channel(-halfB), toY(0)); ctx.fill();
+
+    const halfTopWater = halfB + m * yn;
+    ctx.fillStyle = isOverflow ? 'rgba(211, 47, 47, 0.5)' : 'rgba(33, 150, 243, 0.5)';
+    ctx.beginPath(); ctx.moveTo(toX_Channel(-halfB), toY(0)); ctx.lineTo(toX_Channel(halfB), toY(0));
+    if (isOverflow) { ctx.lineTo(toX_Channel(halfTopWater), toY(yn)); ctx.lineTo(toX_Channel(-halfTopWater), toY(yn)); } 
+    else { ctx.lineTo(toX_Channel(halfTopWater), toY(yn)); ctx.lineTo(toX_Channel(-halfTopWater), toY(yn)); }
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = isOverflow ? '#B71C1C' : '#1976D2'; ctx.lineWidth = 2; ctx.beginPath();
+    ctx.moveTo(toX_Channel(-halfTopWater), toY(yn)); ctx.lineTo(toX_Channel(halfTopWater), toY(yn)); ctx.stroke();
+
+    // 2. ENERGIA
+    const eOriginX = X_SPLIT + 40; const eWidth = W - eOriginX - 30;
+    const maxE_Draw = Math.max(En, Emin * 3, 0.5) * 1.5;
+    const scaleX_Energy = eWidth / maxE_Draw; const toX_Energy = (eVal) => eOriginX + eVal * scaleX_Energy;
+
+    drawArrowAxis(ctx, eOriginX, BOTTOM_Y, eOriginX, MARGIN, 'h');
+    drawArrowAxis(ctx, eOriginX, BOTTOM_Y, W - 10, BOTTOM_Y, 'E');
+    drawTicksY(ctx, eOriginX, BOTTOM_Y, scale, yMaxMetric);
+    drawTicksX(ctx, eOriginX, BOTTOM_Y, scaleX_Energy, maxE_Draw);
+
+    ctx.beginPath(); ctx.strokeStyle = '#673AB7'; ctx.lineWidth = 3;
+    for (let yVal = 0.02; yVal <= yMaxMetric; yVal += 0.05) {
+        const EVal = getSpecificEnergy(yVal, b, m, Q);
+        if (EVal < maxE_Draw * 1.5) {
+            const px = toX_Energy(EVal); const py = toY(yVal);
+            if (yVal === 0.02) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+    }
+    ctx.stroke();
+
+    ctx.beginPath(); ctx.strokeStyle = '#ddd'; ctx.setLineDash([3, 3]); ctx.moveTo(toX_Energy(0), toY(0));
+    ctx.lineTo(toX_Energy(maxE_Draw), toY(maxE_Draw)); ctx.stroke(); ctx.setLineDash([]);
+
+    // 3. LINIE STAŁE
+    const py_n = toY(yn); const px_n_curve = toX_Energy(En);
+    ctx.beginPath(); ctx.strokeStyle = '#1976D2'; ctx.setLineDash([4, 4]); ctx.moveTo(toX_Channel(halfTopWater), py_n); ctx.lineTo(px_n_curve, py_n); ctx.stroke();
+    ctx.fillStyle = '#1976D2'; ctx.beginPath(); ctx.arc(px_n_curve, py_n, 4, 0, 2 * Math.PI); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(px_n_curve, py_n); ctx.lineTo(px_n_curve, BOTTOM_Y); ctx.stroke();
+    if(!hoverData) { ctx.fillStyle = '#1976D2'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(En.toFixed(2), px_n_curve, BOTTOM_Y + 15); }
+    
+    const py_c = toY(yc); const px_c_curve = toX_Energy(Emin); const halfTopCrit = halfB + m * yc;
+    ctx.beginPath(); ctx.strokeStyle = '#D32F2F'; ctx.setLineDash([5, 3]); ctx.moveTo(toX_Channel(-halfTopCrit), py_c); ctx.lineTo(toX_Channel(halfTopCrit), py_c); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(toX_Channel(halfTopCrit), py_c); ctx.lineTo(px_c_curve, py_c); ctx.stroke();
+    ctx.fillStyle = '#D32F2F'; ctx.beginPath(); ctx.arc(px_c_curve, py_c, 4, 0, 2 * Math.PI); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(px_c_curve, py_c); ctx.lineTo(px_c_curve, BOTTOM_Y); ctx.stroke(); ctx.setLineDash([]);
+    if(!hoverData) {
+        let labelOffset = 0; if (Math.abs(px_c_curve - px_n_curve) < 25) labelOffset = 15;
+        ctx.fillStyle = '#D32F2F'; ctx.textAlign = 'center'; ctx.fillText(Emin.toFixed(2), px_c_curve, BOTTOM_Y + 15 + labelOffset);
+    }
+
+    // 4. HOVER
+    if (hoverData) {
+        const { E: EH, h1, h2 } = hoverData; const pxH = toX_Energy(EH);
+        ctx.strokeStyle = '#333'; ctx.lineWidth = 1; ctx.setLineDash([2, 2]); ctx.beginPath(); ctx.moveTo(pxH, MARGIN); ctx.lineTo(pxH, BOTTOM_Y); ctx.stroke();
+        ctx.fillStyle = '#000'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(`E=${EH.toFixed(2)}`, pxH, BOTTOM_Y + 15);
+
+        const drawDepthPoint = (depth, label, color) => {
+             if (depth === null) return;
+             const py = toY(depth); ctx.fillStyle = color; ctx.beginPath(); ctx.arc(pxH, py, 4, 0, 2 * Math.PI); ctx.fill();
+             ctx.beginPath(); ctx.strokeStyle = color; ctx.moveTo(eOriginX, py); ctx.lineTo(pxH, py); ctx.stroke();
+             ctx.fillStyle = color; ctx.textAlign = 'right'; ctx.fillText(`${label}=${depth.toFixed(2)}`, eOriginX - 5, py + 4);
+        };
+        if (h1 !== null) drawDepthPoint(h1, 'h1', '#555'); if (h2 !== null) drawDepthPoint(h2, 'h2', '#555');
+        ctx.setLineDash([]);
+    }
+  }, [results, params, hoverData, activeTab]);
+
+  useEffect(() => {
+      if (activeTab !== 'section' || !widthAnalysisCanvasRef.current || results.widthAnalysisData.length < 2) return;
+      const canvas = widthAnalysisCanvasRef.current;
+      const ctx = canvas.getContext('2d');
+      const W = canvas.width;
+      const H = canvas.height;
+      
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, W, H);
+      
+      const MARGIN = 40;
+      const mainData = results.widthAnalysisData;
+      const extraData = results.widthAnalysisExtra;
+      const minB = mainData[0].b;
+      const maxB = mainData[mainData.length - 1].b;
+      const maxH_data = Math.max(...mainData.map(d => d.h));
+      const maxH_chart = Math.max(maxH_data, params.h_total) * 1.1;
+      
+      const scaleX = (W - 2 * MARGIN) / (maxB - minB);
+      const scaleY = (H - 2 * MARGIN) / maxH_chart;
+      const toX = (bVal) => MARGIN + (bVal - minB) * scaleX;
+      const toY = (hVal) => H - MARGIN - hVal * scaleY;
+      
+      drawArrowAxis(ctx, MARGIN, H - MARGIN, MARGIN, MARGIN, 'h [m]'); 
+      drawArrowAxis(ctx, MARGIN, H - MARGIN, W - 10, H - MARGIN, 'b [m]'); 
+      
+      drawTicksX(ctx, MARGIN, H - MARGIN, scaleX, maxB - minB);
+      ctx.fillStyle = '#666'; ctx.textAlign = 'right';
+      for(let yTick = 0.5; yTick < maxH_chart; yTick += 0.5) {
+          const yPos = toY(yTick);
+          ctx.fillText(yTick.toFixed(1), MARGIN - 5, yPos + 3);
+          ctx.beginPath(); ctx.strokeStyle = '#eee'; ctx.moveTo(MARGIN, yPos); ctx.lineTo(W - MARGIN, yPos); ctx.stroke();
+      }
+
+      const yTotal = toY(params.h_total);
+      ctx.fillStyle = 'rgba(255, 0, 0, 0.05)';
+      ctx.fillRect(MARGIN, MARGIN, W - 2*MARGIN, yTotal - MARGIN); 
+      
+      ctx.beginPath(); ctx.strokeStyle = '#D32F2F'; ctx.setLineDash([5, 5]); ctx.lineWidth = 1.5;
+      ctx.moveTo(MARGIN, yTotal); ctx.lineTo(W - MARGIN, yTotal); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = '#D32F2F'; ctx.fillText(`h_max=${params.h_total}m`, W - MARGIN - 10, yTotal - 5);
+
+      extraData.forEach(dataset => {
+          if(dataset.points.length < 2) return;
+          ctx.beginPath(); ctx.strokeStyle = '#BDBDBD'; ctx.lineWidth = 1.5;
+          dataset.points.forEach((p, i) => { if (i === 0) ctx.moveTo(toX(p.b), toY(p.h)); else ctx.lineTo(toX(p.b), toY(p.h)); });
+          ctx.stroke();
+          const lastP = dataset.points[dataset.points.length - 1];
+          ctx.fillStyle = '#9E9E9E'; ctx.font = '10px sans-serif';
+          ctx.fillText(`1:${dataset.m}`, toX(lastP.b) - 25, toY(lastP.h) - 5);
+      });
+
+      ctx.beginPath(); ctx.strokeStyle = '#2962FF'; ctx.lineWidth = 3;
+      mainData.forEach((p, i) => { if (i === 0) ctx.moveTo(toX(p.b), toY(p.h)); else ctx.lineTo(toX(p.b), toY(p.h)); });
+      ctx.stroke();
+      
+      const xCurr = toX(params.b); const yCurr = toY(results.yn);
+      ctx.fillStyle = '#2962FF'; ctx.beginPath(); ctx.arc(xCurr, yCurr, 5, 0, 2 * Math.PI); ctx.fill();
+      ctx.beginPath(); ctx.strokeStyle = '#2962FF'; ctx.setLineDash([2, 2]); ctx.lineWidth = 1;
+      ctx.moveTo(xCurr, yCurr); ctx.lineTo(xCurr, H - MARGIN); ctx.stroke(); ctx.setLineDash([]);
+      
+      if(!hoverWidthData) {
+        ctx.fillStyle = '#000'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(`Aktualne (1:${params.m}): b=${params.b}m`, xCurr, H - MARGIN + 25);
+      }
+
+      if(hoverWidthData) {
+          const { b, h_main, m_main, extras } = hoverWidthData;
+          const xH = toX(b);
+          
+          ctx.beginPath(); ctx.strokeStyle = '#333'; ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
+          ctx.moveTo(xH, MARGIN); ctx.lineTo(xH, H - MARGIN); ctx.stroke(); ctx.setLineDash([]);
+          
+          const yMain = toY(h_main);
+          ctx.fillStyle = '#2962FF'; ctx.beginPath(); ctx.arc(xH, yMain, 6, 0, 2 * Math.PI); ctx.fill();
+          
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.8)'; ctx.fillRect(xH + 10, yMain - 20, 120, 40);
+          ctx.fillStyle = '#2962FF'; ctx.textAlign = 'left'; ctx.font = 'bold 12px sans-serif';
+          ctx.fillText(`1:${m_main} -> h=${h_main.toFixed(2)}m`, xH + 15, yMain);
+          ctx.fillStyle = '#000'; ctx.font = '11px sans-serif';
+          ctx.fillText(`b=${b.toFixed(2)}m`, xH + 15, yMain + 14);
+
+          extras.forEach(ex => {
+              if(!ex.h) return;
+              const yEx = toY(ex.h);
+              ctx.fillStyle = '#757575'; ctx.beginPath(); ctx.arc(xH, yEx, 4, 0, 2 * Math.PI); ctx.fill();
+              if (Math.abs(yEx - yMain) > 15) {
+                  ctx.textAlign = 'left'; ctx.fillStyle = '#757575';
+                  ctx.fillText(`1:${ex.m} -> ${ex.h.toFixed(2)}m`, xH + 10, yEx + 3);
+              }
+          });
+      }
+      
+      ctx.textAlign = 'left'; ctx.fillStyle = '#2962FF'; ctx.font = 'bold 11px sans-serif';
+      ctx.fillText(`━━ Projektowane (1:${params.m})`, MARGIN + 10, MARGIN + 10);
+      ctx.fillStyle = '#9E9E9E'; ctx.font = '11px sans-serif';
+      ctx.fillText(`━━ Wariantowe (1:1.5, 1:2...)`, MARGIN + 10, MARGIN + 25);
+
+  }, [results, params, hoverWidthData, activeTab]);
+
+  const drawArrowAxis = (ctx, x1, y1, x2, y2, label) => {
+    ctx.beginPath(); ctx.strokeStyle = '#555'; ctx.lineWidth = 1.5; ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    const headlen = 8; const angle = Math.atan2(y2 - y1, x2 - x1);
+    ctx.beginPath(); ctx.moveTo(x2, y2);
+    ctx.lineTo(x2 - headlen * Math.cos(angle - Math.PI / 6), y2 - headlen * Math.sin(angle - Math.PI / 6));
+    ctx.lineTo(x2 - headlen * Math.cos(angle + Math.PI / 6), y2 - headlen * Math.sin(angle + Math.PI / 6));
+    ctx.fillStyle = '#555'; ctx.fill();
+    ctx.fillStyle = '#000'; ctx.font = 'bold 14px serif';
+    if (label.includes('b') || label.includes('L')) { ctx.textAlign = 'right'; ctx.fillText(label, x2, y2 - 8); } 
+    else { ctx.textAlign = 'right'; ctx.fillText(label, x2 - 8, y2 + 15); }
+  };
+
+  const drawTicksY = (ctx, xOrigin, yBottom, scale, maxVal) => {
+    ctx.fillStyle = '#666'; ctx.strokeStyle = '#ccc'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right';
+    const step = calculateStep(maxVal);
+    for (let val = step; val < maxVal; val += step) {
+        const y = yBottom - val * scale;
+        ctx.beginPath(); ctx.moveTo(xOrigin - 3, y); ctx.lineTo(xOrigin + 3, y); ctx.stroke();
+        ctx.fillText(val.toFixed(1), xOrigin - 6, y + 3);
+        ctx.beginPath(); ctx.strokeStyle = '#eee'; ctx.moveTo(xOrigin + 3, y); ctx.lineTo(xOrigin + 1000, y); ctx.stroke(); ctx.strokeStyle = '#ccc';
+    }
+  };
+
+  const drawTicksX = (ctx, xOrigin, yBottom, scale, maxVal) => {
+    ctx.fillStyle = '#666'; ctx.strokeStyle = '#ccc'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+    const step = calculateStep(maxVal);
+    for (let val = step; val < maxVal; val += step) {
+        const x = xOrigin + val * scale;
+        ctx.beginPath(); ctx.moveTo(x, yBottom - 3); ctx.lineTo(x, yBottom + 3); ctx.stroke();
+        ctx.fillText(val.toFixed(1), x, yBottom + 12);
+    }
+  };
+
+  const calculateStep = (maxVal) => {
+      if (maxVal <= 0.5) return 0.1; if (maxVal <= 1.5) return 0.25; if (maxVal <= 3.0) return 0.5;
+      if (maxVal <= 6.0) return 1.0; return 2.0;
+  }
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setParams({ ...params, [name]: parseFloat(value) || 0 });
+  };
+
+  // --- STYLIZACJA ---
+  const mainBgClass = isDarkMode ? 'bg-slate-900' : 'bg-slate-50';
+  const cardBgClass = isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200';
+  const textTitleClass = isDarkMode ? 'text-slate-100' : 'text-slate-800';
+  const textLabelClass = isDarkMode ? 'text-slate-400' : 'text-slate-500';
+  const textValueClass = isDarkMode ? 'text-slate-200' : 'text-slate-900'; 
+  const inputClass = isDarkMode 
+      ? 'p-2 border border-slate-600 rounded bg-slate-700 text-white focus:ring-2 focus:ring-blue-500 outline-none w-full'
+      : 'p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none w-full';
+  const bodyTextClass = isDarkMode ? 'text-slate-300' : 'text-slate-700';
+
+  return (
+    <div className={`flex flex-col w-full max-w-7xl mx-auto p-6 min-h-screen font-sans transition-colors duration-300 ${mainBgClass}`}>
+      
+      {/* HEADER + DARK MODE TOGGLE */}
+      <div className={`flex justify-between items-center mb-6 pb-4 border-b ${isDarkMode ? 'border-slate-700' : 'border-gray-200'}`}>
+        <div className="flex items-center gap-4">
+            <button 
+                onClick={() => setIsDarkMode(!isDarkMode)}
+                className={`p-2 rounded-full transition-colors ${isDarkMode ? 'bg-slate-700 text-yellow-300 hover:bg-slate-600' : 'bg-blue-50 text-orange-500 hover:bg-blue-100'}`}
+                title="Przełącz tryb jasny/ciemny"
+            >
+                {isDarkMode ? (
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" /></svg>
+                ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" /></svg>
+                )}
+            </button>
+            <h1 className={`text-3xl font-bold tracking-tight ${textTitleClass}`}>
+                Analiza Hydrauliczna Koryt Otwartych
+            </h1>
+        </div>
+        
+        <div className="flex flex-col items-end gap-1">
+            <button onClick={() => setShowExportModal(true)} className={`flex items-center gap-2 px-3 py-1 text-sm font-semibold rounded transition-colors ${isDarkMode ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'bg-indigo-100 hover:bg-indigo-200 text-indigo-700'}`}>
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" /></svg>
+                Import/Eksport
+            </button>
+            <div className="text-xs flex items-center gap-2">
+                {saveStatus === 'saved' && <span className="text-green-600">✅ Zapisano</span>}
+                {saveStatus === 'saving' && <span className="text-blue-600">💾 Zapisywanie...</span>}
+            </div>
+        </div>
+      </div>
+
+      {/* --- ZAKŁADKI NAWIGACYJNE --- */}
+      <div className={`flex flex-wrap gap-4 mb-6 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+          <button 
+              onClick={() => setActiveTab('section')}
+              className={`pb-2 px-4 font-semibold transition-colors ${activeTab === 'section' ? 'text-blue-600 border-b-2 border-blue-600' : `${textLabelClass} hover:text-blue-400`}`}
+          >
+              Kalkulator Przekroju
+          </button>
+          <button 
+              onClick={() => setActiveTab('profile')}
+              className={`pb-2 px-4 font-semibold transition-colors ${activeTab === 'profile' ? 'text-blue-600 border-b-2 border-blue-600' : `${textLabelClass} hover:text-blue-400`}`}
+          >
+              Profil Podłużny Koryta
+          </button>
+          <button 
+              onClick={() => setActiveTab('matrix')}
+              className={`pb-2 px-4 font-semibold transition-colors ${activeTab === 'matrix' ? 'text-blue-600 border-b-2 border-blue-600' : `${textLabelClass} hover:text-blue-400`}`}
+          >
+              Zestawienia Kombinacji
+          </button>
+      </div>
+
+      {/* MODAL IMPORT/EXPORT */}
+      {showExportModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+              <div className={`w-full max-w-lg p-6 rounded-xl shadow-2xl ${isDarkMode ? 'bg-slate-800 border border-slate-700' : 'bg-white'}`}>
+                  <h3 className={`text-xl font-bold mb-4 ${textTitleClass}`}>Udostępnianie i Zapis</h3>
+                  <div className="mb-6">
+                      <label className={`block text-xs font-bold uppercase mb-2 ${textLabelClass}`}>Opcja 1: Kod Konfiguracji</label>
+                      <div className="flex gap-2">
+                          <input readOnly value={getExportCode()} className={`flex-grow p-2 text-xs font-mono rounded border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-300' : 'bg-slate-100 border-slate-300'}`} />
+                          <button onClick={handleCopyCode} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs font-bold">{copyFeedback === 'code' ? 'Skopiowano!' : 'Kopiuj'}</button>
+                      </div>
+                  </div>
+                  <div className="mb-6 border-t border-slate-200/20 pt-4">
+                      <label className={`block text-xs font-bold uppercase mb-2 ${textLabelClass}`}>Wczytaj Konfigurację</label>
+                      <div className="flex gap-2">
+                          <input type="text" placeholder="Wklej kod..." value={importCode} onChange={(e) => setImportCode(e.target.value)} className={`flex-grow p-2 text-xs font-mono rounded border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-300' : 'bg-white border-slate-300'}`} />
+                          <button onClick={handleImport} className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-xs font-bold">Wczytaj</button>
+                      </div>
+                  </div>
+                  <div className="flex justify-end">
+                      <button onClick={() => setShowExportModal(false)} className={`px-4 py-2 rounded text-sm font-semibold ${isDarkMode ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-100'}`}>Zamknij</button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* ============================================================================================== */}
+      {/* WIDOK 1: PRZEKRÓJ (Istniejąca treść) */}
+      {/* ============================================================================================== */}
+      {activeTab === 'section' && (
+      <>
+          <section className={`p-6 rounded-xl shadow-sm border mb-6 ${cardBgClass}`}>
+            <h2 className={`text-lg font-bold mb-4 border-b pb-2 flex items-center gap-2 ${isDarkMode ? 'text-slate-200 border-slate-700' : 'text-slate-700 border-slate-200'}`}>
+              <span className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-600 text-white text-xs">1</span> Dane Wejściowe
+            </h2>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6">
+              <div className="flex flex-col"><label className={`text-xs font-semibold uppercase mb-1 ${textLabelClass}`}>Przepływ Q [m³/s]</label><input type="number" step="0.1" name="Q" value={params.Q} onChange={(e) => setParams({...params, Q: parseFloat(e.target.value)||0})} className={`${inputClass} font-bold text-blue-500`} /></div>
+              <div className="flex flex-col"><label className={`text-xs font-semibold uppercase mb-1 ${textLabelClass}`}>Szerokość dna b [m]</label><input type="number" step="0.1" name="b" value={params.b} onChange={(e) => setParams({...params, b: parseFloat(e.target.value)||0})} className={inputClass} /></div>
+              <div className="flex flex-col">
+                  <label className={`text-xs font-semibold uppercase mb-1 ${textLabelClass}`}>Nachylenie 1:m</label>
+                  <div className={`flex items-stretch border rounded overflow-hidden ${isDarkMode ? 'border-slate-600' : 'border-slate-300'}`}>
+                      <div className={`px-2 border-r flex items-center justify-center text-sm font-medium w-8 ${isDarkMode ? 'bg-slate-700 text-slate-300 border-slate-600' : 'bg-slate-100 text-slate-500 border-slate-300'}`}>1:</div>
+                      <input type="number" step="0.1" name="m" value={params.m} onChange={(e) => setParams({...params, m: parseFloat(e.target.value)||0})} className={`p-2 w-full outline-none ${isDarkMode ? 'bg-slate-700 text-white' : ''}`} />
+                  </div>
+              </div>
+              <div className="flex flex-col"><label className={`text-xs font-semibold uppercase mb-1 ${textLabelClass}`}>Głęb. koryta h [m]</label><input type="number" step="0.1" name="h_total" value={params.h_total} onChange={(e) => setParams({...params, h_total: parseFloat(e.target.value)||0})} className={inputClass} /></div>
+              <div className="flex flex-col"><label className={`text-xs font-semibold uppercase mb-1 ${textLabelClass}`}>Szorstkość n</label><input type="number" step="0.001" name="n" value={params.n} onChange={(e) => setParams({...params, n: parseFloat(e.target.value)||0})} className={inputClass} /></div>
+              <div className="flex flex-col"><label className={`text-xs font-semibold uppercase mb-1 ${textLabelClass}`}>Spadek i [-]</label><input type="number" step="0.001" name="slope" value={params.slope} onChange={(e) => setParams({...params, slope: parseFloat(e.target.value)||0})} className={inputClass} /><span className="text-[10px] text-slate-400 text-right mt-1">{(params.slope * 100).toFixed(2)}%</span></div>
+            </div>
+          </section>
+
+          <section className={`p-6 rounded-xl shadow-sm border mb-6 ${cardBgClass}`}>
+            <h2 className={`text-lg font-bold mb-4 border-b pb-2 flex items-center gap-2 ${isDarkMode ? 'text-slate-200 border-slate-700' : 'text-slate-700 border-slate-200'}`}>
+                <span className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-600 text-white text-xs">2</span> Wyniki Hydrauliczne
+            </h2>
+            {results.error ? ( <div className="p-4 bg-red-100 text-red-700 rounded text-center font-semibold">⚠️ {results.error}</div> ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+                    <div className={`p-4 rounded-lg border ${isDarkMode ? 'bg-blue-900/20 border-blue-800' : 'bg-blue-50 border-blue-100'}`}>
+                        <div className="text-xs text-blue-500 font-bold uppercase mb-2 border-b border-blue-200/30 pb-1">Przepływ Normalny</div>
+                        <div className="grid grid-cols-2 gap-2 text-sm">
+                            <span className={textLabelClass}>Głębokość h<sub>n</sub>:</span><span className="font-bold text-blue-500 text-right">{results.yn.toFixed(2)} m</span>
+                            <span className={textLabelClass}>Prędkość v<sub>n</sub>:</span><span className={`font-mono text-right ${textValueClass}`}>{results.vn.toFixed(2)} m/s</span>
+                            <span className={textLabelClass}>Energia E:</span><span className={`font-mono text-right ${textValueClass}`}>{results.En.toFixed(2)} m</span>
+                            <span className={textLabelClass}>Froude Fr:</span><span className={`font-bold text-right ${results.Fr > 1 ? 'text-orange-500' : 'text-green-500'}`}>{results.Fr.toFixed(2)}</span>
+                            <span className={textLabelClass}>Reżim:</span><span className={`font-bold text-right ${results.Fr > 1 ? 'text-orange-500' : 'text-green-500'}`}>{results.flowType}</span>
+                        </div>
+                    </div>
+                    <div className={`p-4 rounded-lg border ${isDarkMode ? 'bg-rose-900/20 border-rose-800' : 'bg-rose-50 border-rose-100'}`}>
+                        <div className="text-xs text-rose-500 font-bold uppercase mb-2 border-b border-rose-200/30 pb-1">Przepływ Krytyczny</div>
+                        <div className="grid grid-cols-2 gap-2 text-sm">
+                            <span className={textLabelClass}>Głębokość h<sub>c</sub>:</span><span className="font-bold text-rose-500 text-right">{results.yc.toFixed(2)} m</span>
+                            <span className={textLabelClass}>Prędkość v<sub>c</sub>:</span><span className={`font-mono text-right ${textValueClass}`}>{results.vc.toFixed(2)} m/s</span>
+                            <span className={textLabelClass}>Energia min:</span><span className={`font-mono text-right ${textValueClass}`}>{results.Emin.toFixed(2)} m</span>
+                            <span className={`${textLabelClass} border-t border-rose-200/20 pt-1 mt-1 col-span-2`}>Spadek Krytyczny I<sub>c</sub>:</span><span className={`font-bold col-span-2 text-right ${textValueClass}`}>{results.Ic.toFixed(4)} [-]</span>
+                        </div>
+                    </div>
+                    <div className={`p-4 rounded-lg border ${isDarkMode ? 'bg-amber-900/20 border-amber-800' : 'bg-amber-50 border-amber-100'}`}>
+                        <div className="text-xs text-amber-500 font-bold uppercase mb-2 border-b border-amber-200/30 pb-1">Minimalny Spadek (dla Q)</div>
+                        <div className="grid grid-cols-2 gap-2 text-sm">
+                            <span className={textLabelClass}>Min Spadek I<sub>min</sub>:</span><span className="font-bold text-amber-500 text-right">{(results.I_min*100).toFixed(2)} %</span>
+                            <span className={textLabelClass}>Wartość I<sub>min</sub>:</span><span className={`font-mono text-right ${textValueClass}`}>{results.I_min.toFixed(4)} [-]</span>
+                            <span className={textLabelClass}>Prędkość v(I<sub>min</sub>):</span><span className={`font-mono text-right ${textValueClass}`}>{results.v_Imin.toFixed(2)} m/s</span>
+                            <span className={textLabelClass}>Froude Fr(I<sub>min</sub>):</span><span className={`font-mono text-right ${textValueClass}`}>{results.Fr_Imin.toFixed(2)}</span>
+                        </div>
+                    </div>
+                    <div className={`p-4 rounded-lg border ${isDarkMode ? 'bg-emerald-900/20 border-emerald-800' : 'bg-emerald-50 border-emerald-100'}`}>
+                        <div className="text-xs text-emerald-600 font-bold uppercase mb-2 border-b border-emerald-200/30 pb-1">Pełne Koryto (dla I)</div>
+                        <div className="grid grid-cols-2 gap-2 text-sm">
+                            <span className={textLabelClass}>Przepływ Q<sub>max</sub>:</span><span className="font-bold text-emerald-600 text-right">{results.Q_hmax.toFixed(2)} m³/s</span>
+                            <span className={textLabelClass}>Prędkość v(h<sub>max</sub>):</span><span className={`font-mono text-right ${textValueClass}`}>{results.v_hmax.toFixed(2)} m/s</span>
+                            <span className={textLabelClass}>Obecny Spadek I:</span><span className={`font-mono text-right ${textValueClass}`}>{params.slope.toFixed(4)} [-]</span>
+                            <span className={textLabelClass}>Froude Fr(h<sub>max</sub>):</span><span className={`font-mono text-right ${textValueClass}`}>{results.Fr_hmax.toFixed(2)}</span>
+                        </div>
+                    </div>
+                    {results.isOverflow && ( <div className="col-span-1 md:col-span-2 xl:col-span-4 bg-red-100 text-red-800 p-3 rounded text-center text-sm font-bold border border-red-200">⚠️ UWAGA: Woda wylewa się z koryta (h<sub>n</sub> &gt; h<sub>total</sub>)!</div> )}
+                </div>
+            )}
+          </section>
+
+          <section className={`p-6 rounded-xl shadow-sm border mb-6 ${cardBgClass}`}>
+            <h2 className={`text-lg font-bold mb-4 border-b pb-2 flex items-center gap-2 ${isDarkMode ? 'text-slate-200 border-slate-700' : 'text-slate-700 border-slate-200'}`}>
+                <span className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-600 text-white text-xs">3</span> Wizualizacja
+            </h2>
+            <div className="flex flex-col gap-12">
+                <div className="flex flex-col items-center">
+                    <div className="relative border border-slate-200 rounded w-full overflow-hidden shadow-inner cursor-crosshair bg-white">
+                         <canvas ref={canvasRef} onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave} width={900} height={450} className="w-full h-auto block" />
+                    </div>
+                    <div className="flex gap-6 justify-center mt-2 text-xs text-slate-500">
+                        <div className="flex items-center"><span className="w-3 h-3 bg-blue-500 rounded-sm mr-2 opacity-50"></span> Woda w korycie</div>
+                        <div className="flex items-center"><span className="w-8 h-0.5 bg-blue-600 border-dashed border-t-2 mr-2"></span> Poziom Normalny</div>
+                        <div className="flex items-center"><span className="w-8 h-0.5 bg-red-600 border-dashed border-t-2 mr-2"></span> Poziom Krytyczny</div>
+                    </div>
+                </div>
+                <div className="flex flex-col w-full">
+                    <h3 className={`text-sm font-semibold text-center mb-4 ${textLabelClass}`}>Analiza: Zależność głębokości h od szerokości dna b</h3>
+                    <div className="relative border border-slate-200 rounded w-full overflow-hidden shadow-inner h-[400px] cursor-crosshair bg-white">
+                        <canvas ref={widthAnalysisCanvasRef} onMouseMove={handleMouseMoveWidth} onMouseLeave={handleMouseLeaveWidth} width={900} height={400} className="w-full h-full block" />
+                    </div>
+                </div>
+            </div>
+          </section>
+
+          <section className={`p-6 rounded-xl shadow-sm border ${cardBgClass}`}>
+            <h2 className={`text-lg font-bold mb-4 border-b pb-2 flex items-center gap-2 ${isDarkMode ? 'text-slate-200 border-slate-700' : 'text-slate-700 border-slate-200'}`}>
+                <span className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-600 text-white text-xs">4</span> Wykonawstwo (WRM-12) & AI
+            </h2>
+            {!results.error && results.reinforcement && (
+                <div className="space-y-6">
+                    <div className={`p-5 rounded-lg border-l-4 shadow-sm ${results.reinforcement.color.replace('text', 'border')}`}>
+                        <div className="flex flex-col md:flex-row gap-6 items-start">
+                            <div className="flex-grow">
+                                <h3 className="text-sm font-semibold uppercase tracking-wide mb-2 opacity-75">Zalecane umocnienie koryta</h3>
+                                <div className={`text-2xl font-bold mb-2 ${results.reinforcement.color.split(' ')[0]}`}>{results.reinforcement.type}</div>
+                                <p className={`text-sm leading-relaxed opacity-90 ${bodyTextClass}`}>{results.reinforcement.desc}</p>
+                            </div>
+                            <div className={`w-full md:w-1/3 p-4 rounded border text-sm ${isDarkMode ? 'bg-slate-900/50 border-slate-700 text-slate-300' : 'bg-gray-50 border-gray-100 text-gray-700'}`}>
+                                <div className="font-semibold mb-2 border-b pb-1 opacity-80">Parametry decyzyjne:</div>
+                                <div className="flex justify-between mb-1"><span className="opacity-70">Prędkość v<sub>n</sub>:</span><span className="font-bold">{results.vn.toFixed(2)} m/s</span></div>
+                                <div className="flex justify-between"><span className="opacity-70">Charakter:</span><span>{results.flowType}</span></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div className={`mt-4 pt-4 border-t ${isDarkMode ? 'border-slate-700' : 'border-gray-200'}`}>
+                        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between mb-4">
+                            <h3 className={`text-sm font-bold flex items-center gap-2 ${textTitleClass}`}><span className="text-xl">🤖</span> Opinia Ekspercka (Gemini AI)</h3>
+                            <button onClick={analyzeWithGemini} disabled={isAiLoading} className={`px-4 py-2 rounded text-sm font-semibold transition-all shadow-sm ${isAiLoading ? 'bg-gray-400 cursor-not-allowed text-white' : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white'}`}>{isAiLoading ? 'Analizowanie...' : 'Uruchom Analizę AI'}</button>
+                        </div>
+                        {aiAnalysis && ( <div className={`p-4 rounded-lg text-sm leading-relaxed shadow-inner border ${isDarkMode ? 'bg-slate-900 border-indigo-900/50 text-indigo-100' : 'bg-indigo-50 border-indigo-100 text-indigo-900'}`}>{aiAnalysis}</div> )}
+                    </div>
+                </div>
+            )}
+          </section>
+      </>
+      )}
+
+      {/* ============================================================================================== */}
+      {/* WIDOK 2: PROFIL KORYTA */}
+      {/* ============================================================================================== */}
+      {activeTab === 'profile' && (
+      <>
+          <section className={`p-6 rounded-xl shadow-sm border mb-6 ${cardBgClass}`}>
+              <h2 className={`text-lg font-bold mb-4 border-b pb-2 flex items-center gap-2 ${textTitleClass}`}>
+                <span className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-600 text-white text-xs">1</span>
+                Dane Ogólne Trasy
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-lg">
+                  <div className="flex flex-col">
+                      <label className={`text-xs font-semibold uppercase mb-1 ${textLabelClass}`}>Przepływ Q [m³/s]</label>
+                      <input type="number" step="0.1" value={profileGlobal.Q} onChange={(e) => setProfileGlobal({...profileGlobal, Q: e.target.value})} className={`${inputClass} font-bold text-blue-500`} />
+                  </div>
+                  <div className="flex flex-col">
+                      <label className={`text-xs font-semibold uppercase mb-1 ${textLabelClass}`}>Globalna Szorstkość (opcjonalnie)</label>
+                      <input type="number" step="0.001" placeholder="Zostaw puste by użyć lokalnej" value={profileGlobal.globalN} onChange={(e) => setProfileGlobal({...profileGlobal, globalN: e.target.value})} className={inputClass} />
+                  </div>
+              </div>
+          </section>
+
+          <section className={`p-6 rounded-xl shadow-sm border mb-6 overflow-x-auto ${cardBgClass}`}>
+              <h2 className={`text-lg font-bold mb-4 border-b pb-2 flex items-center justify-between ${textTitleClass}`}>
+                  <div className="flex items-center gap-2">
+                    <span className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-600 text-white text-xs">2</span> Odcinki Koryta
+                  </div>
+                  <button onClick={addProfileSection} className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-xs font-bold transition-colors">
+                      + Dodaj Odcinek
+                  </button>
+              </h2>
+              
+              <table className="w-full text-left border-collapse min-w-[800px]">
+                  <thead>
+                      <tr className={`border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+                          <th className={`p-2 text-xs font-semibold uppercase ${textLabelClass}`}>Odcinek</th>
+                          <th className={`p-2 text-xs font-semibold uppercase ${textLabelClass}`}>Pikietaż [m]</th>
+                          <th className={`p-2 text-xs font-semibold uppercase ${textLabelClass}`}>Spadek i [-]</th>
+                          <th className={`p-2 text-xs font-semibold uppercase ${textLabelClass}`}>Szer. dna b [m]</th>
+                          <th className={`p-2 text-xs font-semibold uppercase ${textLabelClass}`}>Skarpy 1:m</th>
+                          <th className={`p-2 text-xs font-semibold uppercase ${textLabelClass}`}>Min. głęb. h [m]</th>
+                          <th className={`p-2 text-xs font-semibold uppercase ${textLabelClass}`}>Szorstkość n</th>
+                          <th className={`p-2 text-xs font-semibold uppercase ${textLabelClass}`}>Opcje</th>
+                      </tr>
+                  </thead>
+                  <tbody>
+                      {profileSections.map((sec, index) => (
+                          <tr key={sec.id} className={`border-b border-dashed ${isDarkMode ? 'border-slate-700 hover:bg-slate-800/50' : 'border-slate-200 hover:bg-slate-50'}`}>
+                              <td className={`p-2 font-bold ${textValueClass}`}>{index + 1}</td>
+                              <td className="p-2"><input type="number" step="1" value={sec.chainage !== undefined ? sec.chainage : (sec.length || 0)} onChange={(e) => updateProfileSection(sec.id, 'chainage', parseFloat(e.target.value)||0)} className={inputClass} /></td>
+                              <td className="p-2"><input type="number" step="0.001" value={sec.slope} onChange={(e) => updateProfileSection(sec.id, 'slope', parseFloat(e.target.value)||0)} className={inputClass} /></td>
+                              <td className="p-2"><input type="number" step="0.1" value={sec.b} onChange={(e) => updateProfileSection(sec.id, 'b', parseFloat(e.target.value)||0)} className={inputClass} /></td>
+                              <td className="p-2"><input type="number" step="0.1" value={sec.m} onChange={(e) => updateProfileSection(sec.id, 'm', parseFloat(e.target.value)||0)} className={inputClass} /></td>
+                              <td className="p-2"><input type="number" step="0.1" value={sec.h_min} onChange={(e) => updateProfileSection(sec.id, 'h_min', parseFloat(e.target.value)||0)} className={inputClass} /></td>
+                              <td className="p-2">
+                                  <input type="number" step="0.001" value={sec.n} onChange={(e) => updateProfileSection(sec.id, 'n', parseFloat(e.target.value)||0)} disabled={profileGlobal.globalN !== ''} 
+                                  className={`${inputClass} ${profileGlobal.globalN !== '' ? 'opacity-50 cursor-not-allowed' : ''}`} />
+                              </td>
+                              <td className="p-2 text-center">
+                                  <button onClick={() => removeProfileSection(sec.id)} disabled={profileSections.length <= 1} className="text-red-500 hover:text-red-700 disabled:opacity-30 disabled:cursor-not-allowed p-1">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
+                                  </button>
+                              </td>
+                          </tr>
+                      ))}
+                  </tbody>
+              </table>
+          </section>
+
+          <section className={`p-6 rounded-xl shadow-sm border mb-6 ${cardBgClass}`}>
+              <h2 className={`text-lg font-bold mb-4 border-b pb-2 flex items-center justify-between ${textTitleClass}`}>
+                  <div className="flex items-center gap-2">
+                    <span className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-600 text-white text-xs">3</span> Profil Podłużny Koryta
+                  </div>
+              </h2>
+              {profileResults.hasErrors ? (
+                  <div className="p-4 bg-red-100 text-red-700 rounded text-center font-semibold">⚠️ Sprawdź parametry odcinków. Wartości S, b, n, pikietaże muszą być dodatnie. Upewnij się, że pikietaże rosną z każdym odcinkiem.</div>
+              ) : (
+                  <div className="flex flex-col items-center">
+                      <div className="relative border border-slate-200 rounded w-full overflow-hidden shadow-inner h-[500px] cursor-crosshair">
+                           <canvas ref={profileCanvasRef} onMouseMove={handleMouseMoveProfile} onMouseLeave={handleMouseLeaveProfile} width={1200} height={500} className="w-full h-full block bg-white" />
+                      </div>
+                      <div className="flex gap-6 justify-center mt-3 text-xs text-slate-500">
+                          <div className="flex items-center"><span className="w-8 h-0.5 bg-[#5D4037] border-t-2 mr-2"></span> Dno koryta</div>
+                          <div className="flex items-center"><span className="w-8 h-0.5 bg-[#1976D2] border-t-2 mr-2"></span> Zwierciadło wody</div>
+                          <div className="flex items-center"><span className="w-8 h-0.5 bg-[#EF5350] border-dashed border-t-2 mr-2"></span> Korona skarpy</div>
+                          <div className="flex items-center"><span className="w-8 h-0.5 bg-[#FF9800] border-dashed border-t-2 mr-2"></span> Głęb. krytyczna</div>
+                          <div className="flex items-center"><span className="w-8 h-0.5 bg-[#9C27B0] border-dashed border-t-2 mr-2"></span> Linia Energii</div>
+                      </div>
+                  </div>
+              )}
+          </section>
+      </>
+      )}
+
+      {/* ============================================================================================== */}
+      {/* WIDOK 3: ZESTAWIENIA KOMBINACJI (MACIERZ) */}
+      {/* ============================================================================================== */}
+      {activeTab === 'matrix' && (
+      <>
+          <section className={`p-6 rounded-xl shadow-sm border mb-6 ${cardBgClass}`}>
+              <h2 className={`text-lg font-bold mb-4 border-b pb-2 flex items-center gap-2 ${textTitleClass}`}>
+                <span className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-600 text-white text-xs">1</span>
+                Zestawy Danych Wejściowych
+              </h2>
+              <p className={`text-xs mb-4 ${textLabelClass}`}>
+                  Wpisz wartości oddzielone przecinkami (np. <span className="font-mono bg-slate-100 text-slate-700 px-1 rounded">10, 15, 20</span>). 
+                  Zostaną policzone wszystkie możliwe kombinacje podanych parametrów (max 1000 wyników).
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  <div className="flex flex-col">
+                      <label className={`text-xs font-semibold uppercase mb-1 ${textLabelClass}`}>Przepływy Q [m³/s]</label>
+                      <input type="text" name="Q" value={matrixParams.Q} onChange={handleMatrixInputChange} className={inputClass} placeholder="np. 10, 15, 20" />
+                  </div>
+                  <div className="flex flex-col">
+                      <label className={`text-xs font-semibold uppercase mb-1 ${textLabelClass}`}>Szerokości dna b [m]</label>
+                      <input type="text" name="b" value={matrixParams.b} onChange={handleMatrixInputChange} className={inputClass} placeholder="np. 1, 1.5, 2" />
+                  </div>
+                  <div className="flex flex-col">
+                      <label className={`text-xs font-semibold uppercase mb-1 ${textLabelClass}`}>Nachylenia skarp 1:m</label>
+                      <input type="text" name="m" value={matrixParams.m} onChange={handleMatrixInputChange} className={inputClass} placeholder="np. 1.5, 2" />
+                  </div>
+                  <div className="flex flex-col">
+                      <label className={`text-xs font-semibold uppercase mb-1 ${textLabelClass}`}>Szorstkości n</label>
+                      <input type="text" name="n" value={matrixParams.n} onChange={handleMatrixInputChange} className={inputClass} placeholder="np. 0.03, 0.035" />
+                  </div>
+                  <div className="flex flex-col">
+                      <label className={`text-xs font-semibold uppercase mb-1 ${textLabelClass}`}>Spadki dna i [-]</label>
+                      <input type="text" name="slope" value={matrixParams.slope} onChange={handleMatrixInputChange} className={inputClass} placeholder="np. 0.01, 0.05" />
+                  </div>
+                  <div className="flex flex-col">
+                      <label className={`text-xs font-semibold uppercase mb-1 ${textLabelClass}`}>Wysokość koryta h_max [m]</label>
+                      <input type="text" name="h_total" value={matrixParams.h_total} onChange={handleMatrixInputChange} className={inputClass} placeholder="np. 1.5, 2.0" />
+                  </div>
+              </div>
+          </section>
+
+          <section className={`p-6 rounded-xl shadow-sm border mb-6 ${cardBgClass}`}>
+              <h2 className={`text-lg font-bold mb-4 border-b pb-2 flex items-center justify-between ${textTitleClass}`}>
+                  <div className="flex items-center gap-2">
+                    <span className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-600 text-white text-xs">2</span> Tabela Wyników ({matrixResults.length})
+                  </div>
+                  {matrixResults.length > 0 && !matrixError && (
+                      <button onClick={exportToCSV} className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-xs font-bold transition-colors flex items-center gap-1">
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+                          Eksport do CSV (Excel)
+                      </button>
+                  )}
+              </h2>
+              
+              {matrixError && (
+                  <div className="p-4 bg-red-100 text-red-700 rounded font-semibold mb-4 border border-red-200">⚠️ {matrixError}</div>
+              )}
+
+              {!matrixError && matrixResults.length > 0 && (
+                  <div className="overflow-x-auto rounded border border-slate-200">
+                      <table className="w-full text-left border-collapse min-w-[1000px] select-none">
+                          <thead>
+                              <tr className={`${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'} border-b`}>
+                                  <th className={`p-3 text-xs font-semibold uppercase ${textLabelClass} border-r`} colSpan="6">Parametry Wejściowe</th>
+                                  <th className={`p-3 text-xs font-semibold uppercase ${textLabelClass}`} colSpan="7">Wyniki Hydrauliczne</th>
+                              </tr>
+                              <tr className={`border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'} bg-slate-50/50 dark:bg-slate-800/50`}>
+                                  {/* Inputs */}
+                                  <th className={`p-2 text-xs font-semibold uppercase ${textLabelClass} cursor-pointer hover:text-blue-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors`} onClick={() => handleSort('Q', true)}>Q [m³/s]{getSortIcon('Q')}</th>
+                                  <th className={`p-2 text-xs font-semibold uppercase ${textLabelClass} cursor-pointer hover:text-blue-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors`} onClick={() => handleSort('b', true)}>b [m]{getSortIcon('b')}</th>
+                                  <th className={`p-2 text-xs font-semibold uppercase ${textLabelClass} cursor-pointer hover:text-blue-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors`} onClick={() => handleSort('m', true)}>1:m{getSortIcon('m')}</th>
+                                  <th className={`p-2 text-xs font-semibold uppercase ${textLabelClass} cursor-pointer hover:text-blue-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors`} onClick={() => handleSort('n', true)}>n{getSortIcon('n')}</th>
+                                  <th className={`p-2 text-xs font-semibold uppercase ${textLabelClass} cursor-pointer hover:text-blue-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors`} onClick={() => handleSort('slope', true)}>i [-]{getSortIcon('slope')}</th>
+                                  <th className={`p-2 text-xs font-semibold uppercase ${textLabelClass} border-r cursor-pointer hover:text-blue-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors`} onClick={() => handleSort('h_total', true)}>h_max [m]{getSortIcon('h_total')}</th>
+                                  
+                                  {/* Outputs */}
+                                  <th className={`p-2 text-xs font-semibold uppercase ${textLabelClass} cursor-pointer hover:text-blue-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors`} onClick={() => handleSort('yn', false)}>h_n [m]{getSortIcon('yn')}</th>
+                                  <th className={`p-2 text-xs font-semibold uppercase ${textLabelClass} cursor-pointer hover:text-blue-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors`} onClick={() => handleSort('vn', false)}>v_n [m/s]{getSortIcon('vn')}</th>
+                                  <th className={`p-2 text-xs font-semibold uppercase ${textLabelClass} cursor-pointer hover:text-blue-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors`} onClick={() => handleSort('Fr', false)}>Fr [-]{getSortIcon('Fr')}</th>
+                                  <th className={`p-2 text-xs font-semibold uppercase ${textLabelClass} cursor-pointer hover:text-blue-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors`} onClick={() => handleSort('flowType', false)}>Reżim{getSortIcon('flowType')}</th>
+                                  <th className={`p-2 text-xs font-semibold uppercase ${textLabelClass} cursor-pointer hover:text-blue-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors`} onClick={() => handleSort('yc', false)}>h_c [m]{getSortIcon('yc')}</th>
+                                  <th className={`p-2 text-xs font-semibold uppercase ${textLabelClass} cursor-pointer hover:text-blue-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors`} onClick={() => handleSort('En', false)}>E [m]{getSortIcon('En')}</th>
+                                  <th className={`p-2 text-xs font-semibold uppercase ${textLabelClass} cursor-pointer hover:text-blue-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors`} onClick={() => handleSort('isOverflow', false)}>Status{getSortIcon('isOverflow')}</th>
+                              </tr>
+                          </thead>
+                          <tbody>
+                              {sortedMatrixResults.map((res, i) => {
+                                  if (!res.outputs) {
+                                      return (
+                                          <tr key={i} className={`border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+                                              <td className={`p-2 text-sm font-mono ${textValueClass}`}>{res.inputs.Q}</td>
+                                              <td className={`p-2 text-sm font-mono ${textValueClass}`}>{res.inputs.b}</td>
+                                              <td className={`p-2 text-sm font-mono ${textValueClass}`}>{res.inputs.m}</td>
+                                              <td className={`p-2 text-sm font-mono ${textValueClass}`}>{res.inputs.n}</td>
+                                              <td className={`p-2 text-sm font-mono ${textValueClass}`}>{res.inputs.slope}</td>
+                                              <td className={`p-2 text-sm font-mono border-r ${textValueClass}`}>{res.inputs.h_total}</td>
+                                              <td colSpan="7" className="p-2 text-sm text-red-500 font-semibold text-center">Błąd obliczeń dla tych parametrów</td>
+                                          </tr>
+                                      );
+                                  }
+
+                                  const { Q, b, m, n, slope, h_total } = res.inputs;
+                                  const { yn, yc, vn, Fr, flowType, En, isOverflow } = res.outputs;
+                                  
+                                  const rowBg = isOverflow 
+                                      ? (isDarkMode ? 'bg-red-900/20' : 'bg-red-50')
+                                      : (isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-50');
+
+                                  return (
+                                      <tr key={i} className={`border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'} ${rowBg}`}>
+                                          <td className={`p-2 text-sm font-mono ${getColorClass('Q', Q, textValueClass)}`}>{Q.toFixed(2)}</td>
+                                          <td className={`p-2 text-sm font-mono ${getColorClass('b', b, textValueClass)}`}>{b.toFixed(2)}</td>
+                                          <td className={`p-2 text-sm font-mono ${getColorClass('m', m, textValueClass)}`}>{m.toFixed(2)}</td>
+                                          <td className={`p-2 text-sm font-mono ${getColorClass('n', n, textValueClass)}`}>{n.toFixed(3)}</td>
+                                          <td className={`p-2 text-sm font-mono ${getColorClass('slope', slope, textValueClass)}`}>{slope.toFixed(4)}</td>
+                                          <td className={`p-2 text-sm font-mono border-r ${isDarkMode ? 'border-slate-700' : 'border-slate-200'} ${getColorClass('h_total', h_total, textValueClass)}`}>{h_total.toFixed(2)}</td>
+                                          
+                                          <td className={`p-2 text-sm font-mono font-bold ${isOverflow ? 'text-red-500' : textValueClass}`}>{yn.toFixed(2)}</td>
+                                          <td className={`p-2 text-sm font-mono ${textValueClass}`}>{vn.toFixed(2)}</td>
+                                          <td className={`p-2 text-sm font-mono ${Fr > 1 ? 'text-orange-500' : 'text-green-500'}`}>{Fr.toFixed(2)}</td>
+                                          <td className={`p-2 text-xs font-bold ${Fr > 1 ? 'text-orange-500' : 'text-green-500'}`}>{flowType}</td>
+                                          <td className={`p-2 text-sm font-mono ${textValueClass}`}>{yc.toFixed(2)}</td>
+                                          <td className={`p-2 text-sm font-mono ${textValueClass}`}>{En.toFixed(2)}</td>
+                                          <td className={`p-2 text-xs font-bold ${isOverflow ? 'text-red-500' : 'text-green-500'}`}>
+                                              {isOverflow ? 'PRZELEWA' : 'OK'}
+                                          </td>
+                                      </tr>
+                                  );
+                              })}
+                          </tbody>
+                      </table>
+                  </div>
+              )}
+          </section>
+      </>
+      )}
+
+    </div>
+  );
+};
+
+export default OpenChannelFlow;
