@@ -274,18 +274,18 @@ const MatrixCalculator = () => {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200">
-                  <th className="p-3 font-bold">Q</th>
-                  <th className="p-3 font-bold">b</th>
-                  <th className="p-3 font-bold">1:m</th>
-                  <th className="p-3 font-bold">n</th>
-                  <th className="p-3 font-bold">i</th>
-                  <th className="p-3 font-bold">h_max</th>
-                  <th className="p-3 font-bold text-blue-600 dark:text-blue-400">h_n</th>
-                  <th className="p-3 font-bold text-green-600 dark:text-green-400">v</th>
-                  <th className="p-3 font-bold">Fr</th>
-                  <th className="p-3 font-bold">Reżim</th>
-                  <th className="p-3 font-bold text-orange-600 dark:text-orange-400">h_c</th>
-                  <th className="p-3 font-bold text-purple-600 dark:text-purple-400">E</th>
+                  <th className="p-3 font-bold cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-600" onClick={() => handleSort('Q', true)}>Q [m³/s] {getSortIcon('Q')}</th>
+                  <th className="p-3 font-bold cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-600" onClick={() => handleSort('b', true)}>b [m] {getSortIcon('b')}</th>
+                  <th className="p-3 font-bold cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-600" onClick={() => handleSort('m', true)}>1:m {getSortIcon('m')}</th>
+                  <th className="p-3 font-bold cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-600" onClick={() => handleSort('n', true)}>n [-] {getSortIcon('n')}</th>
+                  <th className="p-3 font-bold cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-600" onClick={() => handleSort('slope', true)}>i [-] {getSortIcon('slope')}</th>
+                  <th className="p-3 font-bold cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-600" onClick={() => handleSort('h_total', true)}>h_max [m] {getSortIcon('h_total')}</th>
+                  <th className="p-3 font-bold text-blue-600 dark:text-blue-400 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-600" onClick={() => handleSort('yn', false)}>h_n [m] {getSortIcon('yn')}</th>
+                  <th className="p-3 font-bold text-green-600 dark:text-green-400 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-600" onClick={() => handleSort('vn', false)}>v [m/s] {getSortIcon('vn')}</th>
+                  <th className="p-3 font-bold text-orange-600 dark:text-orange-400">Fr [-]</th>
+                  <th className="p-3 font-bold text-orange-600 dark:text-orange-400">Reżim</th>
+                  <th className="p-3 font-bold text-orange-600 dark:text-orange-400">h_c [m]</th>
+                  <th className="p-3 font-bold text-purple-600 dark:text-purple-400">E [m]</th>
                   <th className="p-3 font-bold">Status</th>
                 </tr>
               </thead>
@@ -295,13 +295,13 @@ const MatrixCalculator = () => {
                   if (!res.outputs) {
                     return (
                       <tr key={i} className="border-b border-slate-200 dark:border-slate-700">
-                        <td className="p-2 text-sm font-mono">{res.inputs.Q}</td>
-                        <td className="p-2 text-sm font-mono">{res.inputs.b}</td>
-                        <td className="p-2 text-sm font-mono">{res.inputs.m}</td>
-                        <td className="p-2 text-sm font-mono">{res.inputs.n}</td>
-                        <td className="p-2 text-sm font-mono">{res.inputs.slope}</td>
-                        <td className="p-2 text-sm font-mono">{res.inputs.h_total}</td>
-                        <td colSpan="7" className="p-2 text-sm text-red-500 font-semibold text-center">Błąd obliczeń</td>
+                        <td className={`p-2 text-sm font-mono ${getColorClass('Q', res.inputs.Q, textValueClass)}`}>{res.inputs.Q}</td>
+                        <td className={`p-2 text-sm font-mono ${getColorClass('b', res.inputs.b, textValueClass)}`}>{res.inputs.b}</td>
+                        <td className={`p-2 text-sm font-mono ${getColorClass('m', res.inputs.m, textValueClass)}`}>{res.inputs.m}</td>
+                        <td className={`p-2 text-sm font-mono ${getColorClass('n', res.inputs.n, textValueClass)}`}>{res.inputs.n}</td>
+                        <td className={`p-2 text-sm font-mono ${getColorClass('slope', res.inputs.slope, textValueClass)}`}>{res.inputs.slope}</td>
+                        <td className={`p-2 text-sm font-mono ${getColorClass('h_total', res.inputs.h_total, textValueClass)}`}>{res.inputs.h_total}</td>
+                        <td colSpan="7" className="p-2 text-sm text-red-500 dark:text-red-400 font-semibold text-center">Błąd</td>
                       </tr>
                     );
                   }
@@ -315,19 +315,19 @@ const MatrixCalculator = () => {
 
                   return (
                     <tr key={i} className={`border-b border-slate-200 dark:border-slate-700 ${rowBg}`}>
-                      <td className="p-2 text-sm font-mono">{Q.toFixed(2)}</td>
-                      <td className="p-2 text-sm font-mono">{b.toFixed(2)}</td>
-                      <td className="p-2 text-sm font-mono">{m.toFixed(2)}</td>
-                      <td className="p-2 text-sm font-mono">{n.toFixed(3)}</td>
-                      <td className="p-2 text-sm font-mono">{slope.toFixed(4)}</td>
-                      <td className="p-2 text-sm font-mono border-r border-slate-200 dark:border-slate-700">{h_total.toFixed(2)}</td>
+                      <td className={`p-2 text-sm font-mono ${getColorClass('Q', Q, textValueClass)}`}>{Q.toFixed(2)}</td>
+                      <td className={`p-2 text-sm font-mono ${getColorClass('b', b, textValueClass)}`}>{b.toFixed(2)}</td>
+                      <td className={`p-2 text-sm font-mono ${getColorClass('m', m, textValueClass)}`}>{m.toFixed(2)}</td>
+                      <td className={`p-2 text-sm font-mono ${getColorClass('n', n, textValueClass)}`}>{n.toFixed(3)}</td>
+                      <td className={`p-2 text-sm font-mono ${getColorClass('slope', slope, textValueClass)}`}>{slope.toFixed(4)}</td>
+                      <td className={`p-2 text-sm font-mono border-r border-slate-200 dark:border-slate-700 ${getColorClass('h_total', h_total, textValueClass)}`}>{h_total.toFixed(2)}</td>
                       
-                      <td className={`p-2 text-sm font-mono font-bold ${isOverflow ? 'text-red-500 dark:text-red-400' : 'text-slate-700 dark:text-slate-300'}`}>{yn.toFixed(2)}</td>
-                      <td className="p-2 text-sm font-mono text-slate-700 dark:text-slate-300">{vn.toFixed(2)}</td>
+                      <td className={`p-2 text-sm font-mono font-bold ${isOverflow ? 'text-red-500 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'}`}>{yn.toFixed(2)}</td>
+                      <td className="p-2 text-sm font-mono text-green-600 dark:text-green-400">{vn.toFixed(2)}</td>
                       <td className={`p-2 text-sm font-mono ${Fr > 1 ? 'text-orange-500 dark:text-orange-400' : 'text-green-500 dark:text-green-400'}`}>{Fr.toFixed(2)}</td>
                       <td className={`p-2 text-xs font-bold ${Fr > 1 ? 'text-orange-500 dark:text-orange-400' : 'text-green-500 dark:text-green-400'}`}>{flowType}</td>
-                      <td className="p-2 text-sm font-mono text-slate-700 dark:text-slate-300">{yc.toFixed(2)}</td>
-                      <td className="p-2 text-sm font-mono text-slate-700 dark:text-slate-300">{En.toFixed(2)}</td>
+                      <td className="p-2 text-sm font-mono text-orange-600 dark:text-orange-400">{yc.toFixed(2)}</td>
+                      <td className="p-2 text-sm font-mono text-purple-600 dark:text-purple-400">{En.toFixed(2)}</td>
                       <td className={`p-2 text-xs font-bold ${isOverflow ? 'text-red-500 dark:text-red-400' : 'text-green-500 dark:text-green-400'}`}>
                         {isOverflow ? 'PRZELEWA' : 'OK'}
                       </td>
