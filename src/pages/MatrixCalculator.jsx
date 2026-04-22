@@ -274,14 +274,16 @@ const MatrixCalculator = () => {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200">
-                  <th className="p-3 font-bold" onClick={() => handleSort('Q', true)}>Q</th>
-                  <th className="p-3 font-bold" onClick={() => handleSort('b', true)}>b</th>
-                  <th className="p-3 font-bold" onClick={() => handleSort('m', true)}>1:m</th>
-                  <th className="p-3 font-bold" onClick={() => handleSort('n', true)}>n</th>
-                  <th className="p-3 font-bold" onClick={() => handleSort('slope', true)}>i</th>
-                  <th className="p-3 font-bold" onClick={() => handleSort('h_total', true)}>h_max</th>
-                  <th className="p-3 font-bold text-blue-600 dark:text-blue-400" onClick={() => handleSort('yn', false)}>h_n</th>
-                  <th className="p-3 font-bold text-green-600 dark:text-green-400" onClick={() => handleSort('vn', false)}>v</th>
+                  <th className="p-3 font-bold">Q</th>
+                  <th className="p-3 font-bold">b</th>
+                  <th className="p-3 font-bold">1:m</th>
+                  <th className="p-3 font-bold">n</th>
+                  <th className="p-3 font-bold">i</th>
+                  <th className="p-3 font-bold">h_max</th>
+                  <th className="p-3 font-bold text-blue-600 dark:text-blue-400">h_n</th>
+                  <th className="p-3 font-bold text-green-600 dark:text-green-400">v</th>
+                  <th className="p-3 font-bold">Fr</th>
+                  <th className="p-3 font-bold">Reżim</th>
                   <th className="p-3 font-bold text-orange-600 dark:text-orange-400">h_c</th>
                   <th className="p-3 font-bold text-purple-600 dark:text-purple-400">E</th>
                   <th className="p-3 font-bold">Status</th>
