@@ -1,16 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 
 const Home = () => {
-  const [isDarkMode, setIsDarkMode] = useState(false);
   const [hoveredCard, setHoveredCard] = useState(null);
-
-  useEffect(() => {
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [isDarkMode]);
 
   const calculators = [
     {
@@ -77,12 +68,6 @@ const Home = () => {
               Narzędzie do obliczeń hydraulicznych koryt otwartych
             </p>
           </div>
-          <button
-            onClick={() => setIsDarkMode(!isDarkMode)}
-            className="p-3 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm hover:scale-110 transition-transform"
-          >
-            {isDarkMode ? '☀️' : '🌙'}
-          </button>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">

@@ -3,10 +3,15 @@ import {
   getArea, getPerimeter, getTopWidth, getSpecificEnergy, 
   solveBisection, solveDepthsForEnergy, g, getReinforcementSuggestion 
 } from '../utils/hydraulics';
+import { storage, STORAGE_KEYS } from '../utils/storage';
+
+const DEFAULT_PARAMS = {
+  b: 1.0, m: 1.5, h_total: 1.5, n: 0.03, slope: 0.05, Q: 10.0,
+};
 
 const SectionCalculator = () => {
-  const [params, setParams] = useState({
-    b: 1.0, m: 1.5, h_total: 1.5, n: 0.03, slope: 0.05, Q: 10.0,
+  const [params, setParams] = useState(() => {
+    return storage.get(STORAGE_KEYS.SECTION_PARAMS, DEFAULT_PARAMS);
   });
 
   const [results, setResults] = useState({
@@ -21,18 +26,13 @@ const SectionCalculator = () => {
   const [hoverWidthData, setHoverWidthData] = useState(null);
   const [aiAnalysis, setAiAnalysis] = useState(null);
   const [isAiLoading, setIsAiLoading] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(false);
 
   const canvasRef = useRef(null);
   const widthAnalysisCanvasRef = useRef(null);
 
   useEffect(() => {
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [isDarkMode]);
+    storage.set(STORAGE_KEYS.SECTION_PARAMS, params);
+  }, [params]);
 
   const analyzeWithGemini = async () => {
     setIsAiLoading(true);
@@ -241,15 +241,6 @@ const SectionCalculator = () => {
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
         <h2 className="text-3xl font-bold tracking-tight">Kalkulator Przekroju</h2>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setIsDarkMode(!isDarkMode)}
-            className="p-2 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm"
-          >
-            {isDarkMode ? '☀️' : '🌙'}
-          </button>
-          <div className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-[10px] font-bold uppercase tracking-widest">Wersja Pełna</div>
-        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">

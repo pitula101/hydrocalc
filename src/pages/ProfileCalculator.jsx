@@ -1,34 +1,38 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getArea, getPerimeter, getTopWidth, getSpecificEnergy, solveBisection, g } from '../utils/hydraulics';
+import { storage, STORAGE_KEYS } from '../utils/storage';
+
+const DEFAULT_GLOBAL = { Q: 10.0, globalN: '' };
+const DEFAULT_SECTIONS = [
+  { id: 1, chainage: 100, slope: 0.01, b: 1.0, m: 1.5, h_min: 2.0, n: 0.03 },
+  { id: 2, chainage: 150, slope: 0.005, b: 1.5, m: 1.5, h_min: 2.0, n: 0.03 },
+  { id: 3, chainage: 230, slope: 0.02, b: 1.0, m: 2.0, h_min: 1.5, n: 0.035 }
+];
 
 const ProfileCalculator = () => {
-  const [profileGlobal, setProfileGlobal] = useState({
-    Q: 10.0,
-    globalN: '' 
+  const [profileGlobal, setProfileGlobal] = useState(() => {
+    return storage.get(STORAGE_KEYS.PROFILE_GLOBAL, DEFAULT_GLOBAL);
   });
 
-  const [profileSections, setProfileSections] = useState([
-    { id: 1, chainage: 100, slope: 0.01, b: 1.0, m: 1.5, h_min: 2.0, n: 0.03 },
-    { id: 2, chainage: 150, slope: 0.005, b: 1.5, m: 1.5, h_min: 2.0, n: 0.03 },
-    { id: 3, chainage: 230, slope: 0.02, b: 1.0, m: 2.0, h_min: 1.5, n: 0.035 }
-  ]);
+  const [profileSections, setProfileSections] = useState(() => {
+    return storage.get(STORAGE_KEYS.PROFILE_SECTIONS, DEFAULT_SECTIONS);
+  });
 
   const [profileResults, setProfileResults] = useState({
     sections: [], points: [], hasErrors: false
   });
 
   const [hoverProfileData, setHoverProfileData] = useState(null);
-  const [isDarkMode, setIsDarkMode] = useState(false);
 
   const profileCanvasRef = useRef(null);
 
   useEffect(() => {
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [isDarkMode]);
+    storage.set(STORAGE_KEYS.PROFILE_GLOBAL, profileGlobal);
+  }, [profileGlobal]);
+
+  useEffect(() => {
+    storage.set(STORAGE_KEYS.PROFILE_SECTIONS, profileSections);
+  }, [profileSections]);
 
   const calculateProfile = () => {
     let currentX = 0;
@@ -271,14 +275,6 @@ const ProfileCalculator = () => {
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
         <h2 className="text-3xl font-bold tracking-tight">Kalkulator Profilu</h2>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setIsDarkMode(!isDarkMode)}
-            className="p-2 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm"
-          >
-            {isDarkMode ? '☀️' : '🌙'}
-          </button>
-        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">

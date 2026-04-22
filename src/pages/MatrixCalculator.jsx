@@ -1,27 +1,27 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { getArea, getPerimeter, getTopWidth, getSpecificEnergy, solveBisection, g } from '../utils/hydraulics';
+import { storage, STORAGE_KEYS } from '../utils/storage';
+
+const DEFAULT_PARAMS = {
+  Q: "10, 15",
+  b: "1.0",
+  m: "1.5, 2.0",
+  h_total: "1.5",
+  n: "0.03",
+  slope: "0.01, 0.05"
+};
 
 const MatrixCalculator = () => {
-  const [matrixParams, setMatrixParams] = useState({
-    Q: "10, 15",
-    b: "1.0",
-    m: "1.5, 2.0",
-    h_total: "1.5",
-    n: "0.03",
-    slope: "0.01, 0.05"
+  const [matrixParams, setMatrixParams] = useState(() => {
+    return storage.get(STORAGE_KEYS.MATRIX_PARAMS, DEFAULT_PARAMS);
   });
   const [matrixResults, setMatrixResults] = useState([]);
   const [matrixError, setMatrixError] = useState(null);
-  const [isDarkMode, setIsDarkMode] = useState(false);
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc', isInput: false });
 
   useEffect(() => {
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [isDarkMode]);
+    storage.set(STORAGE_KEYS.MATRIX_PARAMS, matrixParams);
+  }, [matrixParams]);
 
   const handleMatrixInputChange = (e) => {
     const { name, value } = e.target;
@@ -194,14 +194,6 @@ const MatrixCalculator = () => {
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
         <h2 className="text-3xl font-bold tracking-tight">Zestawienia Kombinacji</h2>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setIsDarkMode(!isDarkMode)}
-            className="p-2 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm"
-          >
-            {isDarkMode ? '☀️' : '🌙'}
-          </button>
-        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
