@@ -236,19 +236,19 @@ const MatrixCalculator = () => {
             <h3 className="font-bold text-slate-800 dark:text-slate-200 mb-4 text-sm uppercase tracking-wide">Statystyki</h3>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-slate-500">Liczba kombinacji:</span>
+                <span className="text-slate-500 dark:text-slate-300">Liczba kombinacji:</span>
                 <span className="font-bold">{matrixParams.Q.split(',').length * matrixParams.b.split(',').length * matrixParams.m.split(',').length * matrixParams.h_total.split(',').length * matrixParams.n.split(',').length * matrixParams.slope.split(',').length}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500">Poprawne:</span>
+                <span className="text-slate-500 dark:text-slate-300">Poprawne:</span>
                 <span className="font-bold text-green-600">{matrixResults.filter(r => r.outputs).length}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500">Błędne:</span>
+                <span className="text-slate-500 dark:text-slate-300">Błędne:</span>
                 <span className="font-bold text-red-600">{matrixResults.filter(r => !r.outputs).length}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500">Przelew:</span>
+                <span className="text-slate-500 dark:text-slate-300">Przelew:</span>
                 <span className="font-bold text-red-500">{matrixResults.filter(r => r.outputs?.isOverflow).length}</span>
               </div>
             </div>

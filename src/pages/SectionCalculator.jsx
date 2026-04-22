@@ -282,10 +282,10 @@ const SectionCalculator = () => {
             </div>
 
             <div className="bg-white dark:bg-slate-800 p-5 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm">
-              <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-4">Stan Krytyczny</div>
+              <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-300 mb-4">Stan Krytyczny</div>
               <div className="space-y-1">
                 <div className="text-3xl font-black text-slate-800 dark:text-white">{results.yc.toFixed(2)}m</div>
-                <div className="text-[10px] text-slate-400">Głębokość (hc)</div>
+                <div className="text-[10px] text-slate-400 dark:text-slate-300">Głębokość (hc)</div>
               </div>
               <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700 flex justify-between items-end">
                 <div><div className="text-lg font-bold text-slate-700 dark:text-slate-300">{results.vc.toFixed(2)}</div><div className="text-[9px] opacity-60">Prędkość [m/s]</div></div>
@@ -294,10 +294,10 @@ const SectionCalculator = () => {
             </div>
 
             <div className="bg-white dark:bg-slate-800 p-5 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm">
-              <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-4">Min. Spadek (dla Q)</div>
+              <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-300 mb-4">Min. Spadek (dla Q)</div>
               <div className="space-y-1">
                 <div className="text-3xl font-black text-slate-800 dark:text-white">{(results.I_min*100).toFixed(2)}%</div>
-                <div className="text-[10px] text-slate-400">Wymagany spadek Imin</div>
+                <div className="text-[10px] text-slate-400 dark:text-slate-300">Wymagany spadek Imin</div>
               </div>
               <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700 flex justify-between items-end">
                 <div><div className="text-lg font-bold text-slate-700 dark:text-slate-300">{results.v_Imin.toFixed(2)}</div><div className="text-[9px] opacity-60">vn(Imin) [m/s]</div></div>
@@ -306,10 +306,10 @@ const SectionCalculator = () => {
             </div>
 
             <div className="bg-white dark:bg-slate-800 p-5 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm">
-              <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-4">Pełne Koryto (dla i)</div>
+              <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-300 mb-4">Pełne Koryto (dla i)</div>
               <div className="space-y-1">
                 <div className="text-3xl font-black text-slate-800 dark:text-white">{results.Q_hmax.toFixed(1)}</div>
-                <div className="text-[10px] text-slate-400">Przepływ Qmax [m3/s]</div>
+                <div className="text-[10px] text-slate-400 dark:text-slate-300">Przepływ Qmax [m3/s]</div>
               </div>
               <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700 flex justify-between items-end">
                 <div><div className="text-lg font-bold text-slate-700 dark:text-slate-300">{results.v_hmax.toFixed(2)}</div><div className="text-[9px] opacity-60">vn(hmax) [m/s]</div></div>
@@ -324,7 +324,7 @@ const SectionCalculator = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div className="md:col-span-2 bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
-               <h4 className="text-xs font-bold text-slate-400 uppercase text-center mb-4">Analiza: h = f(b) dla zadanego Q i nachylenia m</h4>
+               <h4 className="text-xs font-bold text-slate-400 dark:text-slate-300 uppercase text-center mb-4">Analiza: h = f(b) dla zadanego Q i nachylenia m</h4>
                <canvas ref={widthAnalysisCanvasRef} width={800} height={350} className="w-full h-auto" />
             </div>
             <div className="space-y-6">

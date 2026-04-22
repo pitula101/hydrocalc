@@ -64,7 +64,7 @@ const Home = () => {
             <h1 className="text-4xl font-black text-slate-800 dark:text-white mb-2">
               HydroCalc
             </h1>
-            <p className="text-slate-500 dark:text-slate-400">
+            <p className="text-slate-500 dark:text-slate-300">
               Narzędzie do obliczeń hydraulicznych koryt otwartych
             </p>
           </div>
@@ -83,7 +83,7 @@ const Home = () => {
               <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-3">
                 {calc.title}
               </h3>
-              <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
+              <p className="text-sm text-slate-500 dark:text-slate-300 leading-relaxed">
                 {calc.description}
               </p>
             </div>
@@ -100,21 +100,21 @@ const Home = () => {
               className="flex items-center gap-3 p-4 rounded-2xl bg-slate-50 dark:bg-slate-700 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
             >
               <span className="text-2xl">📐</span>
-              <span className="font-semibold text-slate-700 dark:text-slate-200">Przekrój</span>
+              <span className="font-semibold text-slate-700 dark:text-slate-100">Przekrój</span>
             </a>
             <a
               href="#profile"
               className="flex items-center gap-3 p-4 rounded-2xl bg-slate-50 dark:bg-slate-700 hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-colors"
             >
               <span className="text-2xl">📈</span>
-              <span className="font-semibold text-slate-700 dark:text-slate-200">Profil</span>
+              <span className="font-semibold text-slate-700 dark:text-slate-100">Profil</span>
             </a>
             <a
               href="#matrix"
               className="flex items-center gap-3 p-4 rounded-2xl bg-slate-50 dark:bg-slate-700 hover:bg-green-50 dark:hover:bg-green-900/30 transition-colors"
             >
               <span className="text-2xl">📊</span>
-              <span className="font-semibold text-slate-700 dark:text-slate-200">Kombinacje</span>
+              <span className="font-semibold text-slate-700 dark:text-slate-100">Kombinacje</span>
             </a>
           </div>
         </div>
