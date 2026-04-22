@@ -11,11 +11,23 @@ const App = () => {
   const [isDarkMode, setIsDarkMode] = useState(() => {
     return storage.get(STORAGE_KEYS.DARK_MODE, true);
   });
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', isDarkMode);
     storage.set(STORAGE_KEYS.DARK_MODE, isDarkMode);
   }, [isDarkMode]);
+
+  useEffect(() => {
+    window.onerror = (msg, url, line, col, error) => {
+      setError(`Error: ${msg}`);
+      console.error('Global error:', msg, line, col, error);
+    };
+    window.onunhandledrejection = (event) => {
+      setError(`Unhandled rejection: ${event.reason}`);
+      console.error('Unhandled rejection:', event.reason);
+    };
+  }, []);
 
   useEffect(() => {
     const handleHashChange = () => {
@@ -59,8 +71,24 @@ const App = () => {
 
   const showNavBar = activeHash !== '';
 
+  const handleReset = () => {
+    Object.values(STORAGE_KEYS).forEach(key => storage.remove(key));
+    window.location.reload();
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 transition-colors duration-300">
+      {error && (
+        <div className="fixed inset-0 bg-red-500/90 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl max-w-md">
+            <h2 className="text-xl font-bold text-red-600 mb-2">Wystąpił błąd</h2>
+            <p className="text-slate-600 dark:text-slate-300 mb-4">{error}</p>
+            <button onClick={handleReset} className="px-4 py-2 bg-red-600 text-white rounded-lg">
+              Resetuj dane i przeładuj
+            </button>
+          </div>
+        </div>
+      )}
       {showNavBar && (
         <NavBar 
           activePage={activeHash} 
