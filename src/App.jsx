@@ -5,11 +5,11 @@ import ProfileCalculator from './pages/ProfileCalculator';
 import MatrixCalculator from './pages/MatrixCalculator';
 
 const App = () => {
-  const [activeHash, setActiveHash] = useState('section');
+  const [activeHash, setActiveHash] = useState('');
 
   useEffect(() => {
     const handleHashChange = () => {
-      const hash = window.location.hash.slice(1) || 'section';
+      const hash = window.location.hash.slice(1);
       setActiveHash(hash);
     };
 
@@ -29,6 +29,10 @@ const App = () => {
       default:
         return <Home />;
     }
+  };
+
+  const navigateTo = (hash) => {
+    window.location.hash = hash;
   };
 
   return (
