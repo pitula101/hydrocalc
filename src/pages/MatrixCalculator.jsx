@@ -310,17 +310,17 @@ const MatrixCalculator = () => {
                   const { yn, yc, vn, Fr, flowType, En, isOverflow } = res.outputs;
                   
                   const rowBg = isOverflow 
-                    ? (isDarkMode ? 'bg-red-900/20' : 'bg-red-50')
-                    : (isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-50');
+                    ? 'bg-red-900/20 dark:bg-red-900/30'
+                    : 'hover:bg-slate-50 dark:hover:bg-slate-800';
 
                   return (
-                    <tr key={i} className={`border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'} ${rowBg}`}>
+                    <tr key={i} className={`border-b border-slate-200 dark:border-slate-700 ${rowBg}`}>
                       <td className={`p-2 text-sm font-mono ${getColorClass('Q', Q, textValueClass)}`}>{Q.toFixed(2)}</td>
                       <td className={`p-2 text-sm font-mono ${getColorClass('b', b, textValueClass)}`}>{b.toFixed(2)}</td>
                       <td className={`p-2 text-sm font-mono ${getColorClass('m', m, textValueClass)}`}>{m.toFixed(2)}</td>
                       <td className={`p-2 text-sm font-mono ${getColorClass('n', n, textValueClass)}`}>{n.toFixed(3)}</td>
                       <td className={`p-2 text-sm font-mono ${getColorClass('slope', slope, textValueClass)}`}>{slope.toFixed(4)}</td>
-                      <td className={`p-2 text-sm font-mono border-r ${isDarkMode ? 'border-slate-700' : 'border-slate-200'} ${getColorClass('h_total', h_total, textValueClass)}`}>{h_total.toFixed(2)}</td>
+                      <td className={`p-2 text-sm font-mono border-r border-slate-200 dark:border-slate-700 ${getColorClass('h_total', h_total, textValueClass)}`}>{h_total.toFixed(2)}</td>
                       
                       <td className={`p-2 text-sm font-mono font-bold ${isOverflow ? 'text-red-500' : textValueClass}`}>{yn.toFixed(2)}</td>
                       <td className={`p-2 text-sm font-mono ${textValueClass}`}>{vn.toFixed(2)}</td>
