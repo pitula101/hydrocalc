@@ -11,11 +11,13 @@ const DEFAULT_SECTIONS = [
 
 const ProfileCalculator = () => {
   const [profileGlobal, setProfileGlobal] = useState(() => {
-    return storage.get(STORAGE_KEYS.PROFILE_GLOBAL, DEFAULT_GLOBAL);
+    const saved = storage.get(STORAGE_KEYS.PROFILE_GLOBAL, null);
+    return saved && typeof saved === 'object' ? saved : DEFAULT_GLOBAL;
   });
 
   const [profileSections, setProfileSections] = useState(() => {
-    return storage.get(STORAGE_KEYS.PROFILE_SECTIONS, DEFAULT_SECTIONS);
+    const saved = storage.get(STORAGE_KEYS.PROFILE_SECTIONS, null);
+    return saved && Array.isArray(saved) && saved.length > 0 ? saved : DEFAULT_SECTIONS;
   });
 
   const [profileResults, setProfileResults] = useState({

@@ -13,14 +13,17 @@ const DEFAULT_PARAMS = {
 
 const MatrixCalculator = () => {
   const [matrixParams, setMatrixParams] = useState(() => {
-    return storage.get(STORAGE_KEYS.MATRIX_PARAMS, DEFAULT_PARAMS);
+    const saved = storage.get(STORAGE_KEYS.MATRIX_PARAMS, null);
+    return saved && typeof saved === 'object' ? saved : DEFAULT_PARAMS;
   });
   const [matrixResults, setMatrixResults] = useState([]);
   const [matrixError, setMatrixError] = useState(null);
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc', isInput: false });
 
   useEffect(() => {
-    storage.set(STORAGE_KEYS.MATRIX_PARAMS, matrixParams);
+    if (matrixParams && typeof matrixParams === 'object') {
+      storage.set(STORAGE_KEYS.MATRIX_PARAMS, matrixParams);
+    }
   }, [matrixParams]);
 
   const handleMatrixInputChange = (e) => {
@@ -29,18 +32,21 @@ const MatrixCalculator = () => {
   };
 
   const parseMatrixInput = (str, allowZero = false) => {
+    if (!str || typeof str !== 'string') return [];
     return str.split(',')
       .map(s => parseFloat(s.trim()))
       .filter(v => !isNaN(v) && (allowZero ? v >= 0 : v > 0));
   };
 
   const calculateMatrix = () => {
-    const Qs = parseMatrixInput(matrixParams.Q);
-    const bs = parseMatrixInput(matrixParams.b);
-    const ms = parseMatrixInput(matrixParams.m, true);
-    const hs = parseMatrixInput(matrixParams.h_total);
-    const ns = parseMatrixInput(matrixParams.n);
-    const slopes = parseMatrixInput(matrixParams.slope);
+    if (!matrixParams) return;
+    
+    const Qs = parseMatrixInput(matrixParams.Q || '');
+    const bs = parseMatrixInput(matrixParams.b || '');
+    const ms = parseMatrixInput(matrixParams.m || '', true);
+    const hs = parseMatrixInput(matrixParams.h_total || '');
+    const ns = parseMatrixInput(matrixParams.n || '');
+    const slopes = parseMatrixInput(matrixParams.slope || '');
 
     if (!Qs.length || !bs.length || !ms.length || !hs.length || !ns.length || !slopes.length) {
       setMatrixError("Upewnij się, że wpisano przynajmniej jedną poprawną wartość dla każdego parametru (oddzielone przecinkami).");

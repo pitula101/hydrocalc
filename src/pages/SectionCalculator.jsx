@@ -11,7 +11,8 @@ const DEFAULT_PARAMS = {
 
 const SectionCalculator = () => {
   const [params, setParams] = useState(() => {
-    return storage.get(STORAGE_KEYS.SECTION_PARAMS, DEFAULT_PARAMS);
+    const saved = storage.get(STORAGE_KEYS.SECTION_PARAMS, null);
+    return saved && typeof saved === 'object' ? saved : DEFAULT_PARAMS;
   });
 
   const [results, setResults] = useState({
@@ -31,7 +32,9 @@ const SectionCalculator = () => {
   const widthAnalysisCanvasRef = useRef(null);
 
   useEffect(() => {
-    storage.set(STORAGE_KEYS.SECTION_PARAMS, params);
+    if (params && typeof params === 'object') {
+      storage.set(STORAGE_KEYS.SECTION_PARAMS, params);
+    }
   }, [params]);
 
   const analyzeWithGemini = async () => {
