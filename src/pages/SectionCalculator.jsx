@@ -25,6 +25,8 @@ const SectionCalculator = () => {
 
   const [hoverData, setHoverData] = useState(null);
   const [hoverWidthData, setHoverWidthData] = useState(null);
+  const [canvasMousePos, setCanvasMousePos] = useState({ x: 0, y: 0 });
+  const [widthCanvasMousePos, setWidthCanvasMousePos] = useState({ x: 0, y: 0 });
   const [aiAnalysis, setAiAnalysis] = useState(null);
   const [isAiLoading, setIsAiLoading] = useState(false);
 
@@ -129,6 +131,87 @@ const SectionCalculator = () => {
 
   useEffect(() => { calculateSection(); }, [params]);
 
+  const handleMouseMove = (e) => {
+    if (!canvasRef.current || results.error) return;
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const x = (e.clientX - rect.left) * scaleX;
+    const y = (e.clientY - rect.top) * scaleY;
+    setCanvasMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    const W = canvas.width;
+    const H = canvas.height;
+    const SPLIT_RATIO = 0.55;
+    const X_SPLIT = W * SPLIT_RATIO;
+    const MARGIN = 40;
+
+    if (x > X_SPLIT && x < W && y > MARGIN && y < H - MARGIN + 20) {
+      const { b, m, Q } = params;
+      const { En, Emin, yc } = results;
+      const eOriginX = X_SPLIT + 40;
+      const eWidth = W - eOriginX - 30;
+      const maxE_Draw = Math.max(En, Emin * 3, 0.5) * 1.5;
+      const scaleX_Energy = eWidth / maxE_Draw;
+      const eMouseMetric = (x - eOriginX) / scaleX_Energy;
+
+      if (eMouseMetric > Emin * 0.99) {
+        const func = (h) => getSpecificEnergy(h, b, m, Q) - eMouseMetric;
+        const h1 = solveBisection(func, 0.01, yc);
+        const h2 = solveBisection(func, yc, eMouseMetric);
+        setHoverData({ E: eMouseMetric, h1, h2 });
+      } else { setHoverData(null); }
+    } else { setHoverData(null); }
+  };
+
+  const handleMouseLeave = () => { setHoverData(null); };
+
+  const handleMouseMoveWidth = (e) => {
+    if (!widthAnalysisCanvasRef.current || results.error) return;
+    const canvas = widthAnalysisCanvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const x = (e.clientX - rect.left) * scaleX;
+    setWidthCanvasMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    
+    const W = canvas.width;
+    const MARGIN = 40;
+    
+    const mainData = results.widthAnalysisData;
+    if(mainData.length === 0) return;
+    
+    const minB = mainData[0].b;
+    const maxB = mainData[mainData.length - 1].b;
+    
+    const drawW = W - 2 * MARGIN;
+    const scaleB = drawW / (maxB - minB);
+    const bMouse = minB + (x - MARGIN) / scaleB;
+    
+    if (bMouse >= minB && bMouse <= maxB) {
+      let closestIndex = 0;
+      let minDiff = Infinity;
+      mainData.forEach((p, i) => {
+        const diff = Math.abs(p.b - bMouse);
+        if(diff < minDiff) { minDiff = diff; closestIndex = i; }
+      });
+
+      const currentPoint = {
+        b: mainData[closestIndex].b,
+        h_main: mainData[closestIndex].h,
+        m_main: params.m,
+        extras: results.widthAnalysisExtra.map(ex => ({
+          m: ex.m,
+          h: ex.points[closestIndex]?.h
+        }))
+      };
+      setHoverWidthData(currentPoint);
+    } else {
+      setHoverWidthData(null);
+    }
+  };
+
+  const handleMouseLeaveWidth = () => { setHoverWidthData(null); };
+
   const calculateStepVal = (maxVal) => {
     if (maxVal <= 0.5) return 0.1; if (maxVal <= 1.5) return 0.25; if (maxVal <= 3.0) return 0.5;
     if (maxVal <= 6.0) return 1.0; return 2.0;
@@ -144,6 +227,21 @@ const SectionCalculator = () => {
     ctx.fillStyle = '#000'; ctx.font = 'bold 12px sans-serif';
     if (label === 'b' || label === 'E') { ctx.textAlign = 'right'; ctx.fillText(label, x2, y2 - 8); } 
     else { ctx.textAlign = 'right'; ctx.fillText(label, x2 - 8, y2 + 15); }
+  };
+
+  const drawTooltip = (ctx, x, y, lines, canvasW) => {
+    ctx.font = 'bold 12px sans-serif, sans-serif';
+    const maxW = Math.max(...lines.map(l => ctx.measureText(l).width));
+    const padX = 10, padY = 8, lineH = 16;
+    const tw = maxW + padX * 2, th = lines.length * lineH + padY * 2;
+    let tx = x + 15, ty = y - 10;
+    if (tx + tw > canvasW - 10) tx = x - tw - 15;
+    if (ty + th > 500) ty = 500 - th - 5;
+    if (ty < 5) ty = 5;
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+    ctx.beginPath(); ctx.roundRect(tx, ty, tw, th, 8); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'left';
+    lines.forEach((l, i) => ctx.fillText(l, tx + padX, ty + padY + lineH * (i + 0.7)));
   };
 
   useEffect(() => {
@@ -205,7 +303,15 @@ const SectionCalculator = () => {
     drawLine(yn, En, '#2563EB', 'n');
     drawLine(yc, Emin, '#DC2626', 'c');
 
-  }, [results, params]);
+    if (hoverData) {
+      const lines = [
+        `E = ${hoverData.E.toFixed(3)} m`,
+        `h₁ = ${hoverData.h1?.toFixed(3) ?? '--'} m`,
+        `h₂ = ${hoverData.h2?.toFixed(3) ?? '--'} m`,
+      ];
+      drawTooltip(ctx, canvasMousePos.x, canvasMousePos.y, lines, W);
+    }
+  }, [results, params, hoverData, canvasMousePos]);
 
   useEffect(() => {
     if (!widthAnalysisCanvasRef.current || results.widthAnalysisData.length < 2) return;
@@ -226,6 +332,14 @@ const SectionCalculator = () => {
     drawArrowAxisLocal(ctx, MARGIN, H - MARGIN, MARGIN, MARGIN, 'h [m]');
     drawArrowAxisLocal(ctx, MARGIN, H - MARGIN, W - 10, H - MARGIN, 'b [m]');
 
+    // Draw h_max line
+    const yMaxLine = toY(params.h_total);
+    ctx.fillStyle = 'rgba(255, 0, 0, 0.05)';
+    ctx.fillRect(MARGIN, MARGIN, W - 2*MARGIN, yMaxLine - MARGIN); 
+    ctx.beginPath(); ctx.strokeStyle = '#DC2626'; ctx.setLineDash([5, 5]); ctx.lineWidth = 1.5;
+    ctx.moveTo(MARGIN, yMaxLine); ctx.lineTo(W - MARGIN, yMaxLine); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = '#DC2626'; ctx.font = 'bold 11px sans-serif'; ctx.fillText(`h_max=${params.h_total.toFixed(2)}m`, W - MARGIN - 10, yMaxLine - 5);
+
     results.widthAnalysisExtra.forEach(ex => {
       ctx.beginPath(); ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 1.5;
       ex.points.forEach((p, i) => { if (i === 0) ctx.moveTo(toX(p.b), toY(p.h)); else ctx.lineTo(toX(p.b), toY(p.h)); });
@@ -238,7 +352,18 @@ const SectionCalculator = () => {
 
     ctx.fillStyle = '#2563EB'; ctx.beginPath(); ctx.arc(toX(params.b), toY(results.yn), 5, 0, Math.PI * 2); ctx.fill();
 
-  }, [results, params]);
+    if (hoverWidthData) {
+      const lines = [`b = ${hoverWidthData.b.toFixed(2)} m`, `h(m=${params.m}) = ${hoverWidthData.h_main?.toFixed(3) ?? '--'} m`];
+      results.widthAnalysisExtra.forEach(ex => {
+        const hEx = ex.points.find((_, i) => Math.abs(results.widthAnalysisData[i]?.b - hoverWidthData.b) < 0.01);
+        if (hEx) lines.push(`h(m=${ex.m}) = ${hEx.h?.toFixed(3) ?? '--'} m`);
+      });
+      if (hoverWidthData.h_main > params.h_total) {
+        lines.push(`⚠️ Powyżej h_max!`);
+      }
+      drawTooltip(ctx, widthCanvasMousePos.x, widthCanvasMousePos.y, lines, W);
+    }
+  }, [results, params, hoverWidthData, widthCanvasMousePos]);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
@@ -319,13 +444,13 @@ const SectionCalculator = () => {
           </div>
 
           <div className="bg-white dark:bg-slate-800 p-2 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
-            <canvas ref={canvasRef} width={1000} height={450} className="w-full h-auto" />
+            <canvas ref={canvasRef} width={1000} height={450} className="w-full h-auto cursor-crosshair" onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave} />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div className="md:col-span-2 bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
                <h4 className="text-xs font-bold text-slate-400 dark:text-slate-300 uppercase text-center mb-4">Analiza: h = f(b) dla zadanego Q i nachylenia m</h4>
-               <canvas ref={widthAnalysisCanvasRef} width={800} height={350} className="w-full h-auto" />
+               <canvas ref={widthAnalysisCanvasRef} width={800} height={350} className="w-full h-auto cursor-crosshair" onMouseMove={handleMouseMoveWidth} onMouseLeave={handleMouseLeaveWidth} />
             </div>
             <div className="space-y-6">
                 <div className={`p-6 rounded-3xl border ${results.reinforcement.color} border-current border-opacity-10`}>
