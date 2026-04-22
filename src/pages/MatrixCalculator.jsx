@@ -273,18 +273,18 @@ const MatrixCalculator = () => {
           <div className="overflow-x-auto rounded-3xl border border-slate-200 dark:border-slate-700">
             <table className="w-full text-sm">
               <thead>
-                <tr className="bg-slate-100 dark:bg-slate-700">
-                  <th className="p-3 text-center font-bold cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-600" onClick={() => handleSort('Q', true)}>Q {getSortIcon('Q')}</th>
-                  <th className="p-3 text-center font-bold cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-600" onClick={() => handleSort('b', true)}>b {getSortIcon('b')}</th>
-                  <th className="p-3 text-center font-bold cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-600" onClick={() => handleSort('m', true)}>1:m {getSortIcon('m')}</th>
-                  <th className="p-3 text-center font-bold cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-600" onClick={() => handleSort('n', true)}>n {getSortIcon('n')}</th>
-                  <th className="p-3 text-center font-bold cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-600" onClick={() => handleSort('slope', true)}>i {getSortIcon('slope')}</th>
-                  <th className="p-3 text-center font-bold cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-600" onClick={() => handleSort('h_total', true)}>h_max {getSortIcon('h_total')}</th>
-                  <th className="p-3 text-center font-bold text-blue-600 dark:text-blue-400 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-600" onClick={() => handleSort('yn', false)}>h_n {getSortIcon('yn')}</th>
-                  <th className="p-3 text-center font-bold text-green-600 dark:text-green-400 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-600" onClick={() => handleSort('vn', false)}>v {getSortIcon('vn')}</th>
-                  <th className="p-3 text-center font-bold text-orange-600 dark:text-orange-400">h_c</th>
-                  <th className="p-3 text-center font-bold text-purple-600 dark:text-purple-400">E</th>
-                  <th className="p-3 text-center font-bold">Status</th>
+                <tr className="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200">
+                  <th className="p-3 font-bold" onClick={() => handleSort('Q', true)}>Q</th>
+                  <th className="p-3 font-bold" onClick={() => handleSort('b', true)}>b</th>
+                  <th className="p-3 font-bold" onClick={() => handleSort('m', true)}>1:m</th>
+                  <th className="p-3 font-bold" onClick={() => handleSort('n', true)}>n</th>
+                  <th className="p-3 font-bold" onClick={() => handleSort('slope', true)}>i</th>
+                  <th className="p-3 font-bold" onClick={() => handleSort('h_total', true)}>h_max</th>
+                  <th className="p-3 font-bold text-blue-600 dark:text-blue-400" onClick={() => handleSort('yn', false)}>h_n</th>
+                  <th className="p-3 font-bold text-green-600 dark:text-green-400" onClick={() => handleSort('vn', false)}>v</th>
+                  <th className="p-3 font-bold text-orange-600 dark:text-orange-400">h_c</th>
+                  <th className="p-3 font-bold text-purple-600 dark:text-purple-400">E</th>
+                  <th className="p-3 font-bold">Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -293,12 +293,12 @@ const MatrixCalculator = () => {
                   if (!res.outputs) {
                     return (
                       <tr key={i} className="border-b border-slate-200 dark:border-slate-700">
-                        <td className={`p-2 text-sm font-mono ${textValueClass}`}>{res.inputs.Q}</td>
-                        <td className={`p-2 text-sm font-mono ${textValueClass}`}>{res.inputs.b}</td>
-                        <td className={`p-2 text-sm font-mono ${textValueClass}`}>{res.inputs.m}</td>
-                        <td className={`p-2 text-sm font-mono ${textValueClass}`}>{res.inputs.n}</td>
-                        <td className={`p-2 text-sm font-mono ${textValueClass}`}>{res.inputs.slope}</td>
-                        <td className={`p-2 text-sm font-mono text-center border-r ${textValueClass}`}>{res.inputs.h_total}</td>
+                        <td className="p-2 text-sm font-mono">{res.inputs.Q}</td>
+                        <td className="p-2 text-sm font-mono">{res.inputs.b}</td>
+                        <td className="p-2 text-sm font-mono">{res.inputs.m}</td>
+                        <td className="p-2 text-sm font-mono">{res.inputs.n}</td>
+                        <td className="p-2 text-sm font-mono">{res.inputs.slope}</td>
+                        <td className="p-2 text-sm font-mono">{res.inputs.h_total}</td>
                         <td colSpan="7" className="p-2 text-sm text-red-500 font-semibold text-center">Błąd obliczeń</td>
                       </tr>
                     );
@@ -313,20 +313,20 @@ const MatrixCalculator = () => {
 
                   return (
                     <tr key={i} className={`border-b border-slate-200 dark:border-slate-700 ${rowBg}`}>
-                      <td className={`p-2 text-sm font-mono text-center ${getColorClass('Q', Q, textValueClass)}`}>{Q.toFixed(2)}</td>
-                      <td className={`p-2 text-sm font-mono text-center ${getColorClass('b', b, textValueClass)}`}>{b.toFixed(2)}</td>
-                      <td className={`p-2 text-sm font-mono text-center ${getColorClass('m', m, textValueClass)}`}>{m.toFixed(2)}</td>
-                      <td className={`p-2 text-sm font-mono text-center ${getColorClass('n', n, textValueClass)}`}>{n.toFixed(3)}</td>
-                      <td className={`p-2 text-sm font-mono text-center ${getColorClass('slope', slope, textValueClass)}`}>{slope.toFixed(4)}</td>
-                      <td className={`p-2 text-sm font-mono text-center border-r border-slate-200 dark:border-slate-700 ${getColorClass('h_total', h_total, textValueClass)}`}>{h_total.toFixed(2)}</td>
+                      <td className="p-2 text-sm font-mono">{Q.toFixed(2)}</td>
+                      <td className="p-2 text-sm font-mono">{b.toFixed(2)}</td>
+                      <td className="p-2 text-sm font-mono">{m.toFixed(2)}</td>
+                      <td className="p-2 text-sm font-mono">{n.toFixed(3)}</td>
+                      <td className="p-2 text-sm font-mono">{slope.toFixed(4)}</td>
+                      <td className="p-2 text-sm font-mono border-r border-slate-200 dark:border-slate-700">{h_total.toFixed(2)}</td>
                       
-                      <td className={`p-2 text-sm font-mono text-center font-bold ${isOverflow ? 'text-red-500 dark:text-red-400' : textValueClass}`}>{yn.toFixed(2)}</td>
-                      <td className={`p-2 text-sm font-mono text-center ${textValueClass}`}>{vn.toFixed(2)}</td>
-                      <td className={`p-2 text-sm font-mono text-center ${Fr > 1 ? 'text-orange-500 dark:text-orange-400' : 'text-green-500 dark:text-green-400'}`}>{Fr.toFixed(2)}</td>
-                      <td className={`p-2 text-xs font-bold text-center ${Fr > 1 ? 'text-orange-500 dark:text-orange-400' : 'text-green-500 dark:text-green-400'}`}>{flowType}</td>
-                      <td className={`p-2 text-sm font-mono text-center ${textValueClass}`}>{yc.toFixed(2)}</td>
-                      <td className={`p-2 text-sm font-mono text-center ${textValueClass}`}>{En.toFixed(2)}</td>
-                      <td className={`p-2 text-xs font-bold text-center ${isOverflow ? 'text-red-500 dark:text-red-400' : 'text-green-500 dark:text-green-400'}`}>
+                      <td className={`p-2 text-sm font-mono font-bold ${isOverflow ? 'text-red-500 dark:text-red-400' : 'text-slate-700 dark:text-slate-300'}`}>{yn.toFixed(2)}</td>
+                      <td className="p-2 text-sm font-mono text-slate-700 dark:text-slate-300">{vn.toFixed(2)}</td>
+                      <td className={`p-2 text-sm font-mono ${Fr > 1 ? 'text-orange-500 dark:text-orange-400' : 'text-green-500 dark:text-green-400'}`}>{Fr.toFixed(2)}</td>
+                      <td className={`p-2 text-xs font-bold ${Fr > 1 ? 'text-orange-500 dark:text-orange-400' : 'text-green-500 dark:text-green-400'}`}>{flowType}</td>
+                      <td className="p-2 text-sm font-mono text-slate-700 dark:text-slate-300">{yc.toFixed(2)}</td>
+                      <td className="p-2 text-sm font-mono text-slate-700 dark:text-slate-300">{En.toFixed(2)}</td>
+                      <td className={`p-2 text-xs font-bold ${isOverflow ? 'text-red-500 dark:text-red-400' : 'text-green-500 dark:text-green-400'}`}>
                         {isOverflow ? 'PRZELEWA' : 'OK'}
                       </td>
                     </tr>
