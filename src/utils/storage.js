@@ -1,4 +1,26 @@
 const STORAGE_PREFIX = 'hydrocalc_';
+const CURRENT_VERSION = 3;
+
+const clearOldStorage = () => {
+  try {
+    const versionKey = STORAGE_PREFIX + 'version';
+    const storedVersion = parseInt(localStorage.getItem(versionKey) || '0');
+    
+    if (storedVersion < CURRENT_VERSION) {
+      Object.keys(localStorage).forEach(key => {
+        if (key.startsWith(STORAGE_PREFIX)) {
+          localStorage.removeItem(key);
+        }
+      });
+      localStorage.setItem(versionKey, CURRENT_VERSION.toString());
+      console.log('Storage cleared for upgrade to version', CURRENT_VERSION);
+    }
+  } catch (e) {
+    console.warn('Clear storage check failed:', e);
+  }
+};
+
+clearOldStorage();
 
 export const storage = {
   get: (key, defaultValue = null) => {
