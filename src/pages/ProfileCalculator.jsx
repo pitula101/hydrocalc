@@ -340,9 +340,9 @@ const ProfileCalculator = () => {
                   <th className="p-3 text-right font-bold">1:m</th>
                   <th className="p-3 text-right font-bold">h_min</th>
                   <th className="p-3 text-right font-bold">n</th>
-                  <th className="p-3 text-right font-bold text-blue-600">h_n</th>
-                  <th className="p-3 text-right font-bold text-orange-600">h_c</th>
-                  <th className="p-3 text-right font-bold text-green-600">v [m/s]</th>
+                  <th className="p-3 text-right font-bold text-blue-600 dark:text-blue-400">h_n</th>
+                  <th className="p-3 text-right font-bold text-orange-600 dark:text-orange-400">h_c</th>
+                  <th className="p-3 text-right font-bold text-green-600 dark:text-green-400">v [m/s]</th>
                   <th className="p-3 text-right font-bold">Fr</th>
                 </tr>
               </thead>
@@ -356,9 +356,9 @@ const ProfileCalculator = () => {
                     <td className="p-3 text-right">1:{sec.m}</td>
                     <td className="p-3 text-right">{sec.h_min}</td>
                     <td className="p-3 text-right">{sec.n}</td>
-                    <td className="p-3 text-right font-bold text-blue-600">{sec.hn?.toFixed(2) || '-'}</td>
-                    <td className="p-3 text-right text-orange-600">{sec.hc?.toFixed(2) || '-'}</td>
-                    <td className="p-3 text-right text-green-600">{sec.vn?.toFixed(2) || '-'}</td>
+<td className="p-3 text-right font-bold text-blue-600 dark:text-blue-400">{sec.hn?.toFixed(2) || '-'}</td>
+                  <td className="p-3 text-right text-orange-600 dark:text-orange-400">{sec.hc?.toFixed(2) || '-'}</td>
+                  <td className="p-3 text-right text-green-600 dark:text-green-400">{sec.vn?.toFixed(2) || '-'}</td>
                     <td className="p-3 text-right">{sec.Fr?.toFixed(2) || '-'}</td>
                   </tr>
                 ))}

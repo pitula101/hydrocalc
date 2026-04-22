@@ -272,12 +272,12 @@ const SectionCalculator = () => {
             <div className="bg-blue-600 p-5 rounded-3xl text-white shadow-lg shadow-blue-500/20">
               <div className="text-[10px] font-bold uppercase tracking-widest text-blue-200 mb-4">Stan Normalny</div>
               <div className="space-y-1">
-                <div className="text-3xl font-black">{results.yn.toFixed(2)}m</div>
+                <div className="text-3xl font-black text-white dark:text-white">{results.yn.toFixed(2)}m</div>
                 <div className="text-[10px] opacity-70">Głębokość (hn)</div>
               </div>
               <div className="mt-4 pt-4 border-t border-blue-500/50 flex justify-between items-end">
-                <div><div className="text-lg font-bold">{results.vn.toFixed(2)}</div><div className="text-[9px] opacity-60">Prędkość [m/s]</div></div>
-                <div className="text-right"><div className="text-lg font-bold">{results.Fr.toFixed(2)}</div><div className="text-[9px] opacity-60">Froude ({results.flowType})</div></div>
+                <div><div className="text-lg font-bold text-white dark:text-white">{results.vn.toFixed(2)}</div><div className="text-[9px] opacity-60">Prędkość [m/s]</div></div>
+                <div className="text-right"><div className="text-lg font-bold text-white dark:text-white">{results.Fr.toFixed(2)}</div><div className="text-[9px] opacity-60">Froude ({results.flowType})</div></div>
               </div>
             </div>
 

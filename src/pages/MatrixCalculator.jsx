@@ -241,11 +241,11 @@ const MatrixCalculator = () => {
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500 dark:text-slate-300">Poprawne:</span>
-                <span className="font-bold text-green-600">{matrixResults.filter(r => r.outputs).length}</span>
+                <span className="font-bold text-green-600 dark:text-green-400">{matrixResults.filter(r => r.outputs).length}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500 dark:text-slate-300">Błędne:</span>
-                <span className="font-bold text-red-600">{matrixResults.filter(r => !r.outputs).length}</span>
+                <span className="font-bold text-red-600 dark:text-red-400">{matrixResults.filter(r => !r.outputs).length}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500 dark:text-slate-300">Przelew:</span>
@@ -280,11 +280,9 @@ const MatrixCalculator = () => {
                   <th className="p-3 text-right font-bold cursor-pointer hover:bg-slate-200" onClick={() => handleSort('n', true)}>n {getSortIcon('n')}</th>
                   <th className="p-3 text-right font-bold cursor-pointer hover:bg-slate-200" onClick={() => handleSort('slope', true)}>i {getSortIcon('slope')}</th>
                   <th className="p-3 text-right font-bold cursor-pointer hover:bg-slate-200" onClick={() => handleSort('h_total', true)}>h_max {getSortIcon('h_total')}</th>
-                  <th className="p-3 text-right font-bold text-blue-600 cursor-pointer hover:bg-slate-200" onClick={() => handleSort('yn', false)}>h_n {getSortIcon('yn')}</th>
-                  <th className="p-3 text-right font-bold text-green-600 cursor-pointer hover:bg-slate-200" onClick={() => handleSort('vn', false)}>v {getSortIcon('vn')}</th>
-                  <th className="p-3 text-right font-bold cursor-pointer hover:bg-slate-200" onClick={() => handleSort('Fr', false)}>Fr {getSortIcon('Fr')}</th>
-                  <th className="p-3 text-right font-bold">Regim</th>
-                  <th className="p-3 text-right font-bold text-orange-600">h_c</th>
+<th className="p-3 text-right font-bold text-blue-600 dark:text-blue-400 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-600" onClick={() => handleSort('yn', false)}>h_n {getSortIcon('yn')}</th>
+                  <th className="p-3 text-right font-bold text-green-600 dark:text-green-400 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-600" onClick={() => handleSort('vn', false)}>v {getSortIcon('vn')}</th>
+                  <th className="p-3 text-right font-bold text-orange-600 dark:text-orange-400">h_c</th>
                   <th className="p-3 text-right font-bold text-purple-600">E</th>
                   <th className="p-3 text-right font-bold">Status</th>
                 </tr>
