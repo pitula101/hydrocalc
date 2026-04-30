@@ -433,14 +433,16 @@ const SectionCalculator = () => {
             </div>
           </div>
 
-          <div className="bg-white dark:bg-slate-800 p-2 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
-            <canvas ref={canvasRef} width={1000} height={450} className="w-full h-auto cursor-crosshair" onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave} />
+          <div className="bg-white dark:bg-slate-800 p-2 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden" style={{ aspectRatio: '1000/450' }}>
+            <canvas ref={canvasRef} className="w-full h-full block cursor-crosshair" onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave} />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="md:col-span-2 bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+            <div className="md:col-span-2 bg-white dark:bg-slate-800 p-4 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
                <h4 className="text-xs font-bold text-slate-400 dark:text-slate-300 uppercase text-center mb-4">Analiza: h = f(b) dla zadanego Q i nachylenia m</h4>
-               <canvas ref={widthAnalysisCanvasRef} width={800} height={350} className="w-full h-auto cursor-crosshair" onMouseMove={handleMouseMoveWidth} onMouseLeave={handleMouseLeaveWidth} />
+               <div style={{ aspectRatio: '800/350' }}>
+                 <canvas ref={widthAnalysisCanvasRef} className="w-full h-full block cursor-crosshair" onMouseMove={handleMouseMoveWidth} onMouseLeave={handleMouseLeaveWidth} />
+               </div>
             </div>
             <div className="space-y-6">
                 <div className={`p-6 rounded-3xl border ${results.reinforcement.color} border-current border-opacity-10`}>

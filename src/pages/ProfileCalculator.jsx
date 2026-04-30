@@ -329,12 +329,10 @@ const ProfileCalculator = () => {
         </div>
 
         <div className="lg:col-span-3 space-y-8">
-          <div className="bg-white dark:bg-slate-800 p-2 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+          <div className="bg-white dark:bg-slate-800 p-2 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden" style={{ aspectRatio: '1000/450' }}>
             <canvas 
               ref={profileCanvasRef} 
-              width={1000} 
-              height={450} 
-              className="w-full h-auto"
+              className="w-full h-full block"
               onMouseMove={handleMouseMoveProfile}
               onMouseLeave={handleMouseLeaveProfile}
             />
