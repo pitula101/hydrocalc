@@ -54,7 +54,11 @@ const ProfileCalculator = () => {
       const L = chainage - currentX;
       const hmin = parseFloat(sec.h_min);
 
-      if(slope <= 0 || b <= 0 || effN <= 0 || L <= 0 || isNaN(chainage) || hasErrors) {
+      if(slope <= 0 || b <= 0 || effN <= 0 || L <= 0 || hmin <= 0 || isNaN(chainage) || hasErrors) {
+        hasErrors = true;
+        return { ...sec, hn: null, error: true };
+      }
+      if (m < 0) {
         hasErrors = true;
         return { ...sec, hn: null, error: true };
       }
@@ -144,10 +148,10 @@ const ProfileCalculator = () => {
     if (!profileCanvasRef.current || profileResults.hasErrors) return;
     const canvas = profileCanvasRef.current;
     const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
+    const scaleX = PROFILE_CANVAS_W / rect.width;
     const x = (e.clientX - rect.left) * scaleX;
     
-    const W = canvas.width;
+    const W = PROFILE_CANVAS_W;
     const MARGIN_X = 50;
 
     if (x < MARGIN_X || x > W - 10) {
@@ -174,13 +178,20 @@ const ProfileCalculator = () => {
 
   const handleMouseLeaveProfile = () => { setHoverProfileData(null); };
 
+  const PROFILE_CANVAS_W = 1000;
+  const PROFILE_CANVAS_H = 450;
+
   useEffect(() => {
     if (profileResults.hasErrors || profileResults.points.length === 0) return;
     const canvas = profileCanvasRef.current;
     if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = PROFILE_CANVAS_W * dpr;
+    canvas.height = PROFILE_CANVAS_H * dpr;
     const ctx = canvas.getContext('2d');
-    const W = canvas.width;
-    const H = canvas.height;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const W = PROFILE_CANVAS_W;
+    const H = PROFILE_CANVAS_H;
 
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, W, H);
@@ -276,7 +287,7 @@ const ProfileCalculator = () => {
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">Kalkulator Profilu</h2>
+        <h2 className="text-3xl font-bold tracking-tight dark:text-white">Kalkulator Profilu</h2>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
@@ -286,8 +297,8 @@ const ProfileCalculator = () => {
               <span className="w-6 h-6 rounded-full bg-purple-600 text-white flex items-center justify-center text-[10px]">1</span> Dane Globalne
             </h3>
             <div className="space-y-5">
-              <div><label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5 tracking-wider">Przepływ Q [m³/s]</label><input type="number" step="0.1" value={profileGlobal.Q} onChange={e => setProfileGlobal({...profileGlobal, Q: parseFloat(e.target.value)||0})} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 font-bold text-purple-600 outline-none focus:ring-2 focus:ring-purple-500 transition-all" /></div>
-              <div><label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5 tracking-wider">Globalne n (opcjonalne)</label><input type="number" step="0.001" value={profileGlobal.globalN} onChange={e => setProfileGlobal({...profileGlobal, globalN: e.target.value})} placeholder="Puste = z odcinków" className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-purple-500 transition-all text-xs" /></div>
+              <div><label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5 tracking-wider">Przepływ Q [m³/s]</label><input type="number" step="0.1" value={profileGlobal.Q} onChange={e => setProfileGlobal({...profileGlobal, Q: parseFloat(e.target.value)||0})} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 font-bold text-purple-600 dark:text-purple-400 outline-none focus:ring-2 focus:ring-purple-500 transition-all text-slate-900 dark:text-slate-100" /></div>
+              <div><label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5 tracking-wider">Globalne n (opcjonalne)</label><input type="number" step="0.001" value={profileGlobal.globalN} onChange={e => setProfileGlobal({...profileGlobal, globalN: e.target.value})} placeholder="Puste = z odcinków" className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-purple-500 transition-all text-xs text-slate-900 dark:text-slate-100" /></div>
             </div>
           </div>
 
@@ -304,12 +315,12 @@ const ProfileCalculator = () => {
                     <button onClick={() => removeProfileSection(sec.id)} className="text-xs text-red-500 hover:text-red-700">×</button>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
-                    <div><label className="text-[9px] text-slate-400">PK</label><input type="number" value={sec.chainage} onChange={e => updateProfileSection(sec.id, 'chainage', e.target.value)} className="w-full text-xs p-1 rounded" /></div>
-                    <div><label className="text-[9px] text-slate-400">i [-]</label><input type="number" step="0.001" value={sec.slope} onChange={e => updateProfileSection(sec.id, 'slope', e.target.value)} className="w-full text-xs p-1 rounded" /></div>
-                    <div><label className="text-[9px] text-slate-400">b [m]</label><input type="number" step="0.1" value={sec.b} onChange={e => updateProfileSection(sec.id, 'b', e.target.value)} className="w-full text-xs p-1 rounded" /></div>
-                    <div><label className="text-[9px] text-slate-400">1:m</label><input type="number" step="0.1" value={sec.m} onChange={e => updateProfileSection(sec.id, 'm', e.target.value)} className="w-full text-xs p-1 rounded" /></div>
-                    <div><label className="text-[9px] text-slate-400">h_min</label><input type="number" step="0.1" value={sec.h_min} onChange={e => updateProfileSection(sec.id, 'h_min', e.target.value)} className="w-full text-xs p-1 rounded" /></div>
-                    <div><label className="text-[9px] text-slate-400">n</label><input type="number" step="0.001" value={sec.n} onChange={e => updateProfileSection(sec.id, 'n', e.target.value)} className="w-full text-xs p-1 rounded" /></div>
+                    <div><label className="text-[9px] text-slate-400">PK</label><input type="number" value={sec.chainage} onChange={e => updateProfileSection(sec.id, 'chainage', e.target.value)} className="w-full text-xs p-1 rounded bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-600" /></div>
+                    <div><label className="text-[9px] text-slate-400">i [-]</label><input type="number" step="0.001" value={sec.slope} onChange={e => updateProfileSection(sec.id, 'slope', e.target.value)} className="w-full text-xs p-1 rounded bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-600" /></div>
+                    <div><label className="text-[9px] text-slate-400">b [m]</label><input type="number" step="0.1" value={sec.b} onChange={e => updateProfileSection(sec.id, 'b', e.target.value)} className="w-full text-xs p-1 rounded bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-600" /></div>
+                    <div><label className="text-[9px] text-slate-400">1:m</label><input type="number" step="0.1" value={sec.m} onChange={e => updateProfileSection(sec.id, 'm', e.target.value)} className="w-full text-xs p-1 rounded bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-600" /></div>
+                    <div><label className="text-[9px] text-slate-400">h_min</label><input type="number" step="0.1" value={sec.h_min} onChange={e => updateProfileSection(sec.id, 'h_min', e.target.value)} className="w-full text-xs p-1 rounded bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-600" /></div>
+                    <div><label className="text-[9px] text-slate-400">n</label><input type="number" step="0.001" value={sec.n} onChange={e => updateProfileSection(sec.id, 'n', e.target.value)} className="w-full text-xs p-1 rounded bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-600" /></div>
                   </div>
                 </div>
               ))}
@@ -332,7 +343,7 @@ const ProfileCalculator = () => {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="bg-slate-100 dark:bg-slate-700">
+                <tr className="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200">
                   <th className="p-3 text-left font-bold">Odc.</th>
                   <th className="p-3 text-right font-bold">PK [m]</th>
                   <th className="p-3 text-right font-bold">i [-]</th>
@@ -349,17 +360,17 @@ const ProfileCalculator = () => {
               <tbody>
                 {profileResults.sections.map((sec, idx) => (
                   <tr key={sec.id} className="border-b border-slate-200 dark:border-slate-700">
-                    <td className="p-3 font-bold">{idx + 1}</td>
-                    <td className="p-3 text-right">{sec.chainage}</td>
-                    <td className="p-3 text-right">{sec.slope}</td>
-                    <td className="p-3 text-right">{sec.b}</td>
-                    <td className="p-3 text-right">1:{sec.m}</td>
-                    <td className="p-3 text-right">{sec.h_min}</td>
-                    <td className="p-3 text-right">{sec.n}</td>
-<td className="p-3 text-right font-bold text-blue-600 dark:text-blue-400">{sec.hn?.toFixed(2) || '-'}</td>
-                  <td className="p-3 text-right text-orange-600 dark:text-orange-400">{sec.hc?.toFixed(2) || '-'}</td>
-                  <td className="p-3 text-right text-green-600 dark:text-green-400">{sec.vn?.toFixed(2) || '-'}</td>
-                    <td className="p-3 text-right">{sec.Fr?.toFixed(2) || '-'}</td>
+                    <td className="p-3 font-bold text-slate-700 dark:text-slate-300">{idx + 1}</td>
+                    <td className="p-3 text-right text-slate-700 dark:text-slate-300">{sec.chainage}</td>
+                    <td className="p-3 text-right text-slate-700 dark:text-slate-300">{sec.slope}</td>
+                    <td className="p-3 text-right text-slate-700 dark:text-slate-300">{sec.b}</td>
+                    <td className="p-3 text-right text-slate-700 dark:text-slate-300">1:{sec.m}</td>
+                    <td className="p-3 text-right text-slate-700 dark:text-slate-300">{sec.h_min}</td>
+                    <td className="p-3 text-right text-slate-700 dark:text-slate-300">{sec.n}</td>
+                    <td className="p-3 text-right font-bold text-blue-600 dark:text-blue-400">{sec.hn?.toFixed(2) || '-'}</td>
+                    <td className="p-3 text-right text-orange-600 dark:text-orange-400">{sec.hc?.toFixed(2) || '-'}</td>
+                    <td className="p-3 text-right text-green-600 dark:text-green-400">{sec.vn?.toFixed(2) || '-'}</td>
+                    <td className="p-3 text-right text-slate-700 dark:text-slate-300">{sec.Fr?.toFixed(2) || '-'}</td>
                   </tr>
                 ))}
               </tbody>

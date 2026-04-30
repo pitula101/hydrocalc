@@ -27,8 +27,6 @@ const SectionCalculator = () => {
   const [hoverWidthData, setHoverWidthData] = useState(null);
   const [canvasMousePos, setCanvasMousePos] = useState({ x: 0, y: 0 });
   const [widthCanvasMousePos, setWidthCanvasMousePos] = useState({ x: 0, y: 0 });
-  const [aiAnalysis, setAiAnalysis] = useState(null);
-  const [isAiLoading, setIsAiLoading] = useState(false);
 
   const canvasRef = useRef(null);
   const widthAnalysisCanvasRef = useRef(null);
@@ -39,39 +37,14 @@ const SectionCalculator = () => {
     }
   }, [params]);
 
-  const analyzeWithGemini = async () => {
-    setIsAiLoading(true);
-    setAiAnalysis(null);
-    const apiKey = ""; 
-    const prompt = `
-      Jesteś ekspertem inżynierii wodnej i hydrotechniki.
-      Przeanalizuj krótko poniższe parametry hydrauliczne koryta otwartego i oceń warunki przepływu oraz dobór umocnienia.
-      Dane:
-      - Przepływ Q: ${params.Q} m3/s
-      - Geometria: dno b=${params.b}m, skarpy 1:${params.m}, spadek dna ${(params.slope * 100).toFixed(2)}%
-      - Wyniki:
-        - Głębokość normalna hn: ${results.yn.toFixed(2)} m
-        - Prędkość vn: ${results.vn.toFixed(2)} m/s
-        - Liczba Froude'a: ${results.Fr.toFixed(2)} (${results.flowType})
-        - Sugerowane umocnienie (algorytm): ${results.reinforcement.type}
-      Napisz zwięzłą opinię (max 3-4 zdania) czy prędkość jest bezpieczna, czy istnieje ryzyko erozji lub zamulania, oraz czy zaproponowane umocnienie jest adekwatne. 
-      WAŻNE: Nie używaj formatowania LaTeX, stosuj zwykły tekst.
-    `;
-    try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-      });
-      const data = await response.json();
-      setAiAnalysis(data.candidates?.[0]?.content?.parts?.[0]?.text || "Błąd AI.");
-    } catch (e) { setAiAnalysis("Błąd komunikacji z AI."); } finally { setIsAiLoading(false); }
-  };
-
   const calculateSection = () => {
     const { b, m, n, slope, Q, h_total } = params;
-    if (slope <= 0 || Q <= 0 || b <= 0 || n <= 0) {
-      setResults(prev => ({ ...prev, error: "Parametry muszą być dodatnie (Q, b, n, i > 0)" }));
+    if (slope <= 0 || Q <= 0 || b <= 0 || n <= 0 || h_total <= 0) {
+      setResults(prev => ({ ...prev, error: "Parametry muszą być dodatnie (Q, b, n, i, h > 0)" }));
+      return;
+    }
+    if (m < 0) {
+      setResults(prev => ({ ...prev, error: "Nachylenie skarp m nie może być ujemne." }));
       return;
     }
 
@@ -131,17 +104,20 @@ const SectionCalculator = () => {
 
   useEffect(() => { calculateSection(); }, [params]);
 
+  const CANVAS_W = 1000;
+  const CANVAS_H = 450;
+
   const handleMouseMove = (e) => {
     if (!canvasRef.current || results.error) return;
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
+    const scaleX = CANVAS_W / rect.width;
+    const scaleY = CANVAS_H / rect.height;
     const x = (e.clientX - rect.left) * scaleX;
     const y = (e.clientY - rect.top) * scaleY;
-    setCanvasMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-    const W = canvas.width;
-    const H = canvas.height;
+    setCanvasMousePos({ x, y });
+    const W = CANVAS_W;
+    const H = CANVAS_H;
     const SPLIT_RATIO = 0.55;
     const X_SPLIT = W * SPLIT_RATIO;
     const MARGIN = 40;
@@ -166,15 +142,20 @@ const SectionCalculator = () => {
 
   const handleMouseLeave = () => { setHoverData(null); };
 
+  const WIDTH_CANVAS_W = 800;
+  const WIDTH_CANVAS_H = 350;
+
   const handleMouseMoveWidth = (e) => {
     if (!widthAnalysisCanvasRef.current || results.error) return;
     const canvas = widthAnalysisCanvasRef.current;
     const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
+    const scaleX = WIDTH_CANVAS_W / rect.width;
+    const scaleY = WIDTH_CANVAS_H / rect.height;
     const x = (e.clientX - rect.left) * scaleX;
-    setWidthCanvasMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    const y = (e.clientY - rect.top) * scaleY;
+    setWidthCanvasMousePos({ x, y });
     
-    const W = canvas.width;
+    const W = WIDTH_CANVAS_W;
     const MARGIN = 40;
     
     const mainData = results.widthAnalysisData;
@@ -248,8 +229,13 @@ const SectionCalculator = () => {
     if (!canvasRef.current || results.error) return;
     const { yn, yc, isOverflow, En, Emin } = results;
     const { b, m, h_total, Q } = params;
-    const ctx = canvasRef.current.getContext('2d');
-    const W = canvasRef.current.width; const H = canvasRef.current.height;
+    const canvas = canvasRef.current;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = CANVAS_W * dpr;
+    canvas.height = CANVAS_H * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const W = CANVAS_W; const H = CANVAS_H;
     ctx.fillStyle = '#FFFFFF'; ctx.fillRect(0, 0, W, H);
 
     const SPLIT_RATIO = 0.55; const X_SPLIT = W * SPLIT_RATIO;
@@ -316,8 +302,12 @@ const SectionCalculator = () => {
   useEffect(() => {
     if (!widthAnalysisCanvasRef.current || results.widthAnalysisData.length < 2) return;
     const canvas = widthAnalysisCanvasRef.current;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = WIDTH_CANVAS_W * dpr;
+    canvas.height = WIDTH_CANVAS_H * dpr;
     const ctx = canvas.getContext('2d');
-    const W = canvas.width; const H = canvas.height;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const W = WIDTH_CANVAS_W; const H = WIDTH_CANVAS_H;
     ctx.fillStyle = '#FFFFFF'; ctx.fillRect(0, 0, W, H);
     
     const MARGIN = 40;
@@ -368,7 +358,7 @@ const SectionCalculator = () => {
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">Kalkulator Przekroju</h2>
+        <h2 className="text-3xl font-bold tracking-tight dark:text-white">Kalkulator Przekroju</h2>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
@@ -378,16 +368,16 @@ const SectionCalculator = () => {
               <span className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px]">1</span> Dane Wejściowe
             </h3>
             <div className="space-y-5">
-              <div><label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5 tracking-wider">Przepływ Q [m³/s]</label><input type="number" step="0.1" value={params.Q} onChange={e => setParams({...params, Q: parseFloat(e.target.value)||0})} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 font-bold text-blue-600 outline-none focus:ring-2 focus:ring-blue-500 transition-all" /></div>
+              <div><label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5 tracking-wider">Przepływ Q [m³/s]</label><input type="number" step="0.1" value={params.Q} onChange={e => setParams({...params, Q: parseFloat(e.target.value)||0})} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 font-bold text-blue-600 dark:text-blue-400 outline-none focus:ring-2 focus:ring-blue-500 transition-all text-slate-900 dark:text-slate-100" /></div>
               <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5 tracking-wider">Dno b [m]</label><input type="number" step="0.1" value={params.b} onChange={e => setParams({...params, b: parseFloat(e.target.value)||0})} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 transition-all" /></div>
-                <div><label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5 tracking-wider">Nachylenie 1:m</label><input type="number" step="0.1" value={params.m} onChange={e => setParams({...params, m: parseFloat(e.target.value)||0})} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 transition-all" /></div>
+                <div><label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5 tracking-wider">Dno b [m]</label><input type="number" step="0.1" value={params.b} onChange={e => setParams({...params, b: parseFloat(e.target.value)||0})} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 transition-all text-slate-900 dark:text-slate-100" /></div>
+                <div><label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5 tracking-wider">Nachylenie 1:m</label><input type="number" step="0.1" value={params.m} onChange={e => setParams({...params, m: parseFloat(e.target.value)||0})} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 transition-all text-slate-900 dark:text-slate-100" /></div>
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5 tracking-wider">Szorstkość n</label><input type="number" step="0.001" value={params.n} onChange={e => setParams({...params, n: parseFloat(e.target.value)||0})} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 transition-all text-xs" /></div>
-                <div><label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5 tracking-wider">Spadek i [-]</label><input type="number" step="0.0001" value={params.slope} onChange={e => setParams({...params, slope: parseFloat(e.target.value)||0})} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 transition-all text-xs" /></div>
+                <div><label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5 tracking-wider">Szorstkość n</label><input type="number" step="0.001" value={params.n} onChange={e => setParams({...params, n: parseFloat(e.target.value)||0})} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 transition-all text-xs text-slate-900 dark:text-slate-100" /></div>
+                <div><label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5 tracking-wider">Spadek i [-]</label><input type="number" step="0.0001" value={params.slope} onChange={e => setParams({...params, slope: parseFloat(e.target.value)||0})} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 transition-all text-xs text-slate-900 dark:text-slate-100" /></div>
               </div>
-              <div><label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5 tracking-wider">Głęb. koryta h [m]</label><input type="number" step="0.1" value={params.h_total} onChange={e => setParams({...params, h_total: parseFloat(e.target.value)||0})} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 transition-all" /></div>
+              <div><label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5 tracking-wider">Głęb. koryta h [m]</label><input type="number" step="0.1" value={params.h_total} onChange={e => setParams({...params, h_total: parseFloat(e.target.value)||0})} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 transition-all text-slate-900 dark:text-slate-100" /></div>
             </div>
           </div>
         </div>
@@ -457,19 +447,6 @@ const SectionCalculator = () => {
                     <h4 className="font-bold text-sm mb-2 uppercase tracking-wide">🛡️ Umocnienie</h4>
                     <div className="text-xl font-black mb-1">{results.reinforcement.type}</div>
                     <p className="text-xs opacity-80 leading-relaxed">{results.reinforcement.desc}</p>
-                </div>
-                <div className="bg-slate-900 text-white p-6 rounded-3xl shadow-xl shadow-slate-900/20">
-                    <div className="flex items-center justify-between mb-4">
-                        <h4 className="font-bold text-xs uppercase tracking-widest text-slate-400">🤖 Ekspert AI</h4>
-                        <button onClick={analyzeWithGemini} disabled={isAiLoading} className="text-[10px] font-black bg-blue-600 hover:bg-blue-500 px-3 py-1 rounded-full transition-colors disabled:opacity-50 uppercase tracking-tighter">
-                            {isAiLoading ? 'Analiza...' : 'Generuj Opinię'}
-                        </button>
-                    </div>
-                    {aiAnalysis ? (
-                        <p className="text-[11px] leading-relaxed italic text-slate-300">"{aiAnalysis}"</p>
-                    ) : (
-                        <p className="text-[10px] text-slate-500 text-center py-4">Kliknij przycisk powyżej, aby uzyskać opinię inżynierską od AI Gemini.</p>
-                    )}
                 </div>
             </div>
           </div>
