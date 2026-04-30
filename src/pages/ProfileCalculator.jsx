@@ -1,7 +1,4 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine
-} from 'recharts';
+import React, { useState, useEffect, useRef } from 'react';
 import { getArea, getPerimeter, getTopWidth, getSpecificEnergy, solveBisection, g } from '../utils/hydraulics';
 import { storage, STORAGE_KEYS } from '../utils/storage';
 
@@ -26,6 +23,10 @@ const ProfileCalculator = () => {
   const [profileResults, setProfileResults] = useState({
     sections: [], points: [], hasErrors: false
   });
+
+  const [hoverProfileData, setHoverProfileData] = useState(null);
+
+  const profileCanvasRef = useRef(null);
 
   useEffect(() => {
     storage.set(STORAGE_KEYS.PROFILE_GLOBAL, profileGlobal);
@@ -127,19 +128,161 @@ const ProfileCalculator = () => {
     }
   };
 
-  const CustomTooltip = ({ active, payload, label }) => {
-    if (!active || !payload || !payload.length) return null;
-    return (
-      <div className="bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-lg text-xs">
-        <p className="font-bold mb-1">PK = {label} m</p>
-        {payload.map((entry, idx) => (
-          <p key={idx} style={{ color: entry.color }} className="font-mono">
-            {entry.name}: {entry.value?.toFixed(2)} m
-          </p>
-        ))}
-      </div>
-    );
+  const drawArrowAxis = (ctx, x1, y1, x2, y2, label) => {
+    ctx.beginPath(); ctx.strokeStyle = '#555'; ctx.lineWidth = 1.5; ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    const headlen = 8; const angle = Math.atan2(y2 - y1, x2 - x1);
+    ctx.beginPath(); ctx.moveTo(x2, y2);
+    ctx.lineTo(x2 - headlen * Math.cos(angle - Math.PI / 6), y2 - headlen * Math.sin(angle - Math.PI / 6));
+    ctx.lineTo(x2 - headlen * Math.cos(angle + Math.PI / 6), y2 - headlen * Math.sin(angle + Math.PI / 6));
+    ctx.fillStyle = '#555'; ctx.fill();
+    ctx.fillStyle = '#000'; ctx.font = 'bold 14px serif';
+    if (label.includes('b') || label.includes('L')) { ctx.textAlign = 'right'; ctx.fillText(label, x2, y2 - 8); } 
+    else { ctx.textAlign = 'right'; ctx.fillText(label, x2 - 8, y2 + 15); }
   };
+
+  const calculateStep = (range) => {
+    if (range <= 1) return 0.25; if (range <= 5) return 1; if (range <= 10) return 2; if (range <= 20) return 5; return 10;
+  };
+
+  const handleMouseMoveProfile = (e) => {
+    if (!profileCanvasRef.current || profileResults.hasErrors) return;
+    const canvas = profileCanvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = PROFILE_CANVAS_W / rect.width;
+    const x = (e.clientX - rect.left) * scaleX;
+    
+    const W = PROFILE_CANVAS_W;
+    const MARGIN_X = 50;
+
+    if (x < MARGIN_X || x > W - 10) {
+      setHoverProfileData(null);
+      return;
+    }
+
+    const pts = profileResults.points;
+    if (!pts || pts.length === 0) return;
+
+    const minX = 0;
+    const maxX = pts[pts.length - 1].x;
+    const drawW = W - 2 * MARGIN_X;
+    const scaleXCoord = drawW / (maxX - minX);
+    const xMetric = (x - MARGIN_X) / scaleXCoord + minX;
+
+    const section = profileResults.sections.find(s => xMetric >= s.startX && xMetric <= s.endX);
+    if (section && !section.error) {
+      setHoverProfileData({ xPx: x, xMetric, section });
+    } else {
+      setHoverProfileData(null);
+    }
+  };
+
+  const handleMouseLeaveProfile = () => { setHoverProfileData(null); };
+
+  const PROFILE_CANVAS_W = 1000;
+  const PROFILE_CANVAS_H = 450;
+
+  useEffect(() => {
+    if (profileResults.hasErrors || profileResults.points.length === 0) return;
+    const canvas = profileCanvasRef.current;
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = PROFILE_CANVAS_W * dpr;
+    canvas.height = PROFILE_CANVAS_H * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const W = PROFILE_CANVAS_W;
+    const H = PROFILE_CANVAS_H;
+
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, W, H);
+
+    const MARGIN_X = 50; const MARGIN_Y = 40;
+    const pts = profileResults.points;
+    const minX = 0; const maxX = pts[pts.length - 1].x;
+    
+    const minZ = Math.min(...pts.map(p => p.zb));
+    const maxZ = Math.max(...pts.map(p => Math.max(p.ztop, p.zw, p.ze)));
+    const rangeZ = maxZ - minZ; const padZ = rangeZ * 0.2;
+    const drawMinZ = minZ - padZ; const drawMaxZ = maxZ + padZ;
+
+    const scaleX = (W - 2 * MARGIN_X) / (maxX - minX);
+    const scaleY = (H - 2 * MARGIN_Y) / (drawMaxZ - drawMinZ);
+
+    const toX = (x) => MARGIN_X + (x - minX) * scaleX;
+    const toY = (z) => H - MARGIN_Y - (z - drawMinZ) * scaleY;
+
+    drawArrowAxis(ctx, MARGIN_X, H - MARGIN_Y + 20, W - 10, H - MARGIN_Y + 20, 'L [m]');
+    drawArrowAxis(ctx, MARGIN_X - 20, H - MARGIN_Y, MARGIN_X - 20, 10, 'Z [m]');
+
+    profileResults.sections.forEach(sec => {
+      const xPx = toX(sec.endX);
+      ctx.beginPath(); ctx.strokeStyle = '#f0f0f0'; ctx.moveTo(xPx, MARGIN_Y); ctx.lineTo(xPx, H - MARGIN_Y); ctx.stroke();
+      ctx.fillStyle = '#888'; ctx.textAlign = 'center'; ctx.fillText(`L=${sec.endX.toFixed(0)}`, xPx, H - MARGIN_Y + 15);
+    });
+    ctx.fillText(`L=0`, toX(0), H - MARGIN_Y + 15);
+
+    const stepZ = calculateStep(drawMaxZ - drawMinZ);
+    for(let z = Math.ceil(drawMinZ/stepZ)*stepZ; z <= drawMaxZ; z += stepZ) {
+      const yPx = toY(z);
+      ctx.beginPath(); ctx.strokeStyle = '#f0f0f0'; ctx.moveTo(MARGIN_X, yPx); ctx.lineTo(W - MARGIN_X, yPx); ctx.stroke();
+      ctx.fillStyle = '#666'; ctx.textAlign = 'right'; ctx.fillText(z.toFixed(1), MARGIN_X - 25, yPx + 4);
+    }
+
+    ctx.beginPath(); ctx.strokeStyle = '#EF5350'; ctx.setLineDash([5, 5]); ctx.lineWidth = 1.5;
+    pts.forEach((p, i) => { if(i===0) ctx.moveTo(toX(p.x), toY(p.ztop)); else ctx.lineTo(toX(p.x), toY(p.ztop)); });
+    ctx.stroke(); ctx.setLineDash([]);
+
+    ctx.beginPath(); ctx.strokeStyle = '#9C27B0'; ctx.setLineDash([8, 4]); ctx.lineWidth = 1.5;
+    pts.forEach((p, i) => { if(i===0) ctx.moveTo(toX(p.x), toY(p.ze)); else ctx.lineTo(toX(p.x), toY(p.ze)); });
+    ctx.stroke(); ctx.setLineDash([]);
+
+    ctx.beginPath(); ctx.strokeStyle = '#FF9800'; ctx.setLineDash([3, 3]); ctx.lineWidth = 1.5;
+    pts.forEach((p, i) => { if(i===0) ctx.moveTo(toX(p.x), toY(p.zc)); else ctx.lineTo(toX(p.x), toY(p.zc)); });
+    ctx.stroke(); ctx.setLineDash([]);
+
+    ctx.beginPath(); ctx.moveTo(toX(pts[0].x), toY(pts[0].zb));
+    pts.forEach(p => ctx.lineTo(toX(p.x), toY(p.zw)));
+    for(let i = pts.length - 1; i >= 0; i--) { ctx.lineTo(toX(pts[i].x), toY(pts[i].zb)); }
+    ctx.closePath(); ctx.fillStyle = 'rgba(33, 150, 243, 0.4)'; ctx.fill();
+
+    ctx.beginPath(); ctx.strokeStyle = '#1976D2'; ctx.lineWidth = 2;
+    pts.forEach((p, i) => { if(i===0) ctx.moveTo(toX(p.x), toY(p.zw)); else ctx.lineTo(toX(p.x), toY(p.zw)); });
+    ctx.stroke();
+
+    ctx.beginPath(); ctx.strokeStyle = '#5D4037'; ctx.lineWidth = 3;
+    pts.forEach((p, i) => { if(i===0) ctx.moveTo(toX(p.x), toY(p.zb)); else ctx.lineTo(toX(p.x), toY(p.zb)); });
+    ctx.stroke();
+
+    if (hoverProfileData) {
+      const { xPx, section } = hoverProfileData;
+      ctx.beginPath(); ctx.strokeStyle = '#333'; ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
+      ctx.moveTo(xPx, MARGIN_Y); ctx.lineTo(xPx, H - MARGIN_Y); ctx.stroke(); ctx.setLineDash([]);
+
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'; ctx.strokeStyle = '#ccc'; ctx.lineWidth = 1;
+      const boxW = 160; const boxH = 100;
+      let boxX = xPx + 10; if (boxX + boxW > W) boxX = xPx - boxW - 10;
+      const boxY = MARGIN_Y + 10;
+      
+      ctx.fillRect(boxX, boxY, boxW, boxH); ctx.strokeRect(boxX, boxY, boxW, boxH);
+
+      ctx.fillStyle = '#000'; ctx.textAlign = 'left'; ctx.font = 'bold 12px sans-serif';
+      ctx.fillText(`Odcinek ${section.id}`, boxX + 10, boxY + 18);
+      ctx.font = '11px sans-serif';
+      ctx.fillStyle = '#1976D2'; ctx.fillText(`h_n = ${section.hn.toFixed(2)} m`, boxX + 10, boxY + 36);
+      ctx.fillStyle = '#FF9800'; ctx.fillText(`h_c = ${section.hc.toFixed(2)} m`, boxX + 10, boxY + 50);
+      ctx.fillStyle = '#9C27B0'; ctx.fillText(`E = ${section.En.toFixed(2)} m`, boxX + 10, boxY + 64);
+      ctx.fillStyle = '#333'; ctx.fillText(`v = ${section.vn.toFixed(2)} m/s`, boxX + 10, boxY + 78);
+      ctx.font = 'bold 11px sans-serif'; ctx.fillStyle = section.Fr > 1 ? '#EF5350' : '#4CAF50';
+      ctx.fillText(`Fr = ${section.Fr.toFixed(2)} (${section.flowType})`, boxX + 10, boxY + 92);
+    }
+
+    ctx.textAlign = 'left'; ctx.fillStyle = '#5D4037'; ctx.font = 'bold 11px sans-serif'; ctx.fillText(`━━ Dno koryta`, MARGIN_X + 10, 20);
+    ctx.fillStyle = '#1976D2'; ctx.fillText(`━━ Zwierciadło wody`, MARGIN_X + 10, 35);
+    ctx.fillStyle = '#EF5350'; ctx.fillText(`-- Max. wys. skarp`, MARGIN_X + 130, 20);
+    ctx.fillStyle = '#9C27B0'; ctx.fillText(`-- Linia Energii E`, MARGIN_X + 130, 35);
+    ctx.fillStyle = '#FF9800'; ctx.fillText(`-- Głębokość Krytyczna h_c`, MARGIN_X + 250, 20);
+
+  }, [profileResults, hoverProfileData]);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
@@ -186,42 +329,16 @@ const ProfileCalculator = () => {
         </div>
 
         <div className="lg:col-span-3 space-y-8">
-          {profileResults.hasErrors ? (
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-2xl text-center font-semibold">
-              ⚠️ Sprawdź parametry odcinków. Wartości S, b, n, pikietaże muszą być dodatnie.
-            </div>
-          ) : (
-            <div className="bg-white dark:bg-slate-800 p-4 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
-              <div className="h-[450px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={profileResults.points} margin={{ top: 10, right: 30, left: 10, bottom: 10 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis 
-                      dataKey="x" 
-                      type="number" 
-                      label={{ value: 'L [m]', position: 'insideBottomRight', offset: -5, fill: '#94a3b8', fontSize: 12 }}
-                      tick={{ fill: '#94a3b8', fontSize: 11 }}
-                      stroke="#cbd5e1"
-                    />
-                    <YAxis 
-                      domain={['auto', 'auto']} 
-                      reversed={true}
-                      label={{ value: 'Z [m]', angle: -90, position: 'insideLeft', fill: '#94a3b8', fontSize: 12 }}
-                      tick={{ fill: '#94a3b8', fontSize: 11 }}
-                      stroke="#cbd5e1"
-                    />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
-                    <Line type="linear" dataKey="ztop" name="Korona skarpy" stroke="#EF5350" strokeWidth={2} strokeDasharray="5 5" dot={false} />
-                    <Line type="linear" dataKey="ze" name="Linia Energii E" stroke="#9C27B0" strokeWidth={2} strokeDasharray="8 4" dot={false} />
-                    <Line type="linear" dataKey="zc" name="Głęb. krytyczna hc" stroke="#FF9800" strokeWidth={2} strokeDasharray="3 3" dot={false} />
-                    <Line type="linear" dataKey="zw" name="Zwierciadło wody" stroke="#1976D2" strokeWidth={2} dot={false} />
-                    <Line type="linear" dataKey="zb" name="Dno koryta" stroke="#5D4037" strokeWidth={3} dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          )}
+          <div className="bg-white dark:bg-slate-800 p-2 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+            <canvas 
+              ref={profileCanvasRef} 
+              width={1000} 
+              height={450} 
+              className="w-full h-auto"
+              onMouseMove={handleMouseMoveProfile}
+              onMouseLeave={handleMouseLeaveProfile}
+            />
+          </div>
 
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
